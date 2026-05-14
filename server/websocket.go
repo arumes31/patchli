@@ -29,14 +29,16 @@ type AgentDetails struct {
 
 // AgentManager tracks active WebSocket connections and their details.
 type AgentManager struct {
-	agents  map[string]*websocket.Conn // mac_address -> connection
-	details map[string]*AgentDetails    // mac_address -> details
-	mu      sync.RWMutex
+	agents     map[string]*websocket.Conn // mac_address -> connection
+	details    map[string]*AgentDetails   // mac_address -> details
+	activeJobs map[string]string         // node_mac -> job_id
+	mu         sync.RWMutex
 }
 
 var manager = AgentManager{
-	agents:  make(map[string]*websocket.Conn),
-	details: make(map[string]*AgentDetails),
+	agents:     make(map[string]*websocket.Conn),
+	details:    make(map[string]*AgentDetails),
+	activeJobs: make(map[string]string),
 }
 
 // Message types for communication
@@ -62,7 +64,7 @@ type HeartbeatPayload struct {
 
 type CommandPayload struct {
 	ID                 string   `json:"id"`
-	Action             string   `json:"action"` // e.g., "patch", "reboot"
+	Action             string   `json:"action"` // e.g., "patch", "reboot", "chaos_restart"
 	Packages           []string `json:"packages,omitempty"`
 	PrePatchScript     string   `json:"pre_patch_script,omitempty"`
 	PostPatchScript    string   `json:"post_patch_script,omitempty"`

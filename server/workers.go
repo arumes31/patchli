@@ -16,6 +16,7 @@ type Job struct {
 	PostPatchScript    string
 	HealthCheckCommand string
 	MaintenanceWindow  *MaintenanceWindow
+	StartTime          time.Time
 }
 
 type MaintenanceWindow struct {
@@ -75,6 +76,25 @@ func (wp *WorkerPool) worker() {
 }
 
 func (wp *WorkerPool) processJob(job Job) {
+	// 0. Conflict Detection (Feature 2)
+	manager.mu.RLock()
+	existingJobID, exists := manager.activeJobs[job.NodeMac]
+	manager.mu.RUnlock()
+	if exists {
+		log.Printf("Conflict: Node %s already has active job %s. Skipping job %s.", job.NodeMac, existingJobID, job.ID)
+		return
+	}
+
+	manager.mu.Lock()
+	if manager.activeJobs == nil { manager.activeJobs = make(map[string]string) }
+	manager.activeJobs[job.NodeMac] = job.ID
+	manager.mu.Unlock()
+	defer func() {
+		manager.mu.Lock()
+		delete(manager.activeJobs, job.NodeMac)
+		manager.mu.Unlock()
+	}()
+
 	// 1. Check if group is paused (Feature 11)
 	wp.mu.Lock()
 	for wp.pausedGroups[job.GroupID] {
@@ -82,13 +102,20 @@ func (wp *WorkerPool) processJob(job Job) {
 	}
 	wp.mu.Unlock()
 
-	// 2. Check Maintenance Window (Feature 5)
+	// 2. Check Maintenance Window (Feature 5 & 9)
 	if job.MaintenanceWindow != nil {
 		now := time.Now()
 		if now.After(job.MaintenanceWindow.EndTime) {
 			log.Printf("Job %s skipped/failed: Maintenance window ended.", job.ID)
 			return
 		}
+
+		// Feature 9: Overrun protection (Don't start if less than 15 mins left)
+		if job.MaintenanceWindow.EndTime.Sub(now) < 15*time.Minute {
+			log.Printf("Job %s skipped: Less than 15 minutes left in maintenance window.", job.ID)
+			return
+		}
+
 		if now.Before(job.MaintenanceWindow.StartTime) {
 			log.Printf("Job %s delayed: Outside maintenance window.", job.ID)
 			// Re-queue job for later
@@ -116,6 +143,7 @@ func (wp *WorkerPool) processJob(job Job) {
 	log.Printf("Worker executing job %s on node %s (Action: %s)", job.ID, job.NodeMac, job.Action)
 
 	// 5. Send command to agent via WebSocket
+	job.StartTime = time.Now()
 	err := manager.SendCommand(job.NodeMac, CommandPayload{
 		ID:                 job.ID,
 		Action:             job.Action,
@@ -136,10 +164,23 @@ func (wp *WorkerPool) processJob(job Job) {
 		return
 	}
 
+	// Feature 8: Monitor for expiration
+	go wp.monitorJobExpiration(job)
+
 	NotifyWebhooks(WebhookPayload{
 		Event:   "job_started",
 		Message: "Patch job dispatched to agent successfully.",
 		JobID:   job.ID,
 		NodeMac: job.NodeMac,
 	})
+}
+
+func (wp *WorkerPool) monitorJobExpiration(job Job) {
+	// 2 hour default timeout
+	timeout := 2 * time.Hour
+	timer := time.NewTimer(timeout)
+	<-timer.C
+	
+	// In a real app, check DB if job is still 'running'
+	log.Printf("Job %s timed out after %v", job.ID, timeout)
 }

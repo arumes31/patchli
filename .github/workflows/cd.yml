@@ -35,11 +35,18 @@ jobs:
             type=ref,event=branch
             type=sha,format=long
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push Server image
         uses: docker/build-push-action@v5
         with:
           context: ./server
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/server:${{ github.ref_name }}
           labels: ${{ steps.meta.outputs.labels }}
 
@@ -48,5 +55,6 @@ jobs:
         with:
           context: ./agent
           push: true
+          platforms: linux/amd64,linux/arm64,linux/386
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/agent:${{ github.ref_name }}
           labels: ${{ steps.meta.outputs.labels }}

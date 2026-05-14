@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 )
 
 // AptManager implements the PackageManager interface for apt (Debian/Ubuntu).
@@ -35,14 +37,17 @@ func (m *AptManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 }
 
 func (m *AptManager) ApplyUpdates(ctx context.Context, packages []string) (UpdateResult, error) {
+	// Feature 1: Dependency-aware ordering (Kernel should typically be last)
+	ordered := orderPackages(packages)
+
 	args := []string{"upgrade", "-y"}
-	if len(packages) > 0 {
-		args = append([]string{"install", "-y"}, packages...)
+	if len(ordered) > 0 {
+		args = append([]string{"install", "-y"}, ordered...)
 	}
 
 	cmd := execCommandContext(ctx, "apt-get", args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -50,6 +55,21 @@ func (m *AptManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 	err := cmd.Run()
 	return UpdateResult{Success: err == nil, Output: out.String(), Error: err}, err
 }
+
+func orderPackages(packages []string) []string {
+	if len(packages) == 0 { return packages }
+
+	var normal, late []string
+	for _, p := range packages {
+		if strings.Contains(p, "linux-image") || strings.Contains(p, "kernel") {
+			late = append(late, p)
+		} else {
+			normal = append(normal, p)
+		}
+	}
+	return append(normal, late...)
+}
+
 
 func (m *AptManager) RebootRequired() bool {
 	_, err := statFunc("/var/run/reboot-required")

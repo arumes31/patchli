@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/patchli/agent/updater"
@@ -22,6 +23,7 @@ import (
 
 var idFile = "/etc/patchli/node_id"
 var execCommandContext = exec.CommandContext
+var performSecureAgentUpdateFunc = performSecureAgentUpdate
 
 // Message types matching server
 const (
@@ -70,7 +72,52 @@ func getOrGenerateIdentity() string {
 	return newID
 }
 
+func performSelfDiagnosis() {
+	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
+	
+	fmt.Print("1. Identity check: ")
+	nodeID := getOrGenerateIdentity()
+	fmt.Printf("UUID=%s [OK]\n", nodeID)
+
+	fmt.Print("2. Package Manager check: ")
+	pm, err := updater.DetectPackageManager()
+	if err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+	} else {
+		fmt.Printf("Detected=%T [OK]\n", pm)
+	}
+
+	fmt.Print("3. Disk Space check: ")
+	if err := updater.CheckDiskSpace("/etc/patchli", 100*1024*1024); err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+	} else {
+		fmt.Println("Available > 100MB [OK]")
+	}
+
+	fmt.Print("4. Network (Server) check: ")
+	serverURL := os.Getenv("SERVER_URL")
+	if serverURL == "" { serverURL = "localhost:8080" }
+	resp, err := http.Get("http://" + serverURL + "/health")
+	if err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+	} else {
+		fmt.Printf("Server Health=%d [OK]\n", resp.StatusCode)
+		resp.Body.Close()
+	}
+	
+	fmt.Println("Self-diagnosis complete.")
+}
+
 func main() {
+	verifyFlag := flag.Bool("verify", false, "Perform self-diagnosis and exit")
+	flag.Parse()
+
+	if *verifyFlag {
+		performSelfDiagnosis()
+		return
+	}
+
+	daemon.SdNotify(false, daemon.SdNotifyReady)
 	RunAgent(context.Background())
 }
 
@@ -144,10 +191,17 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 			return
 		case <-ticker.C:
 			hostname, _ := os.Hostname()
+			rebootNeeded := pm.RebootRequired()
+			
+			if rebootNeeded {
+				// Feature 20: Reboot Nag
+				exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
+			}
+
 			payload := HeartbeatPayload{
 				MacAddress:   nodeID,
 				Hostname:     hostname,
-				RebootNeeded: pm.RebootRequired(),
+				RebootNeeded: rebootNeeded,
 			}
 			data, _ := json.Marshal(payload)
 			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
@@ -248,6 +302,9 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 	case "update_agent":
 		log.Printf("Auto-updating agent...")
 		res = performSecureAgentUpdate(ctx)
+	case "chaos_restart":
+		log.Printf("CHAOS MONKEY: Restarting agent...")
+		os.Exit(1)
 	default:
 		log.Printf("Unknown action: %s", cmd.Action)
 		return

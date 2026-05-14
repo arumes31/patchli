@@ -12,15 +12,20 @@ import (
 var execCommand = exec.Command
 
 func main() {
-	agentPath := "/usr/local/bin/patchli-agent"
-	if len(os.Args) > 1 {
-		agentPath = os.Args[1]
-	}
+	agentPath := parseArgs(os.Args)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	runWatchdog(agentPath, sigChan)
+}
+
+func parseArgs(args []string) string {
+	agentPath := "/usr/local/bin/patchli-agent"
+	if len(args) > 1 {
+		agentPath = args[1]
+	}
+	return agentPath
 }
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
