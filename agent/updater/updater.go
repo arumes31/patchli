@@ -11,6 +11,9 @@ var statFunc = os.Stat
 var execCommand = exec.Command
 var execCommandContext = exec.CommandContext
 var detachProcessFunc = detachProcess
+var geteuidFunc = os.Geteuid
+var removeFunc = os.Remove
+var removeAllFunc = os.RemoveAll
 
 // UpdateResult represents the outcome of an update operation.
 type UpdateResult struct {
@@ -35,7 +38,7 @@ type PackageManager interface {
 
 // SelfDestruct completely uninstalls the agent, removes its configuration, and stops the service.
 func SelfDestruct() error {
-	if os.Geteuid() != 0 {
+	if geteuidFunc() != 0 {
 		return fmt.Errorf("self destruct requires root privileges")
 	}
 
@@ -45,17 +48,17 @@ func SelfDestruct() error {
 	if _, err := statFunc("/etc/systemd/system/patchli-agent.service"); err == nil {
 		execCommand("systemctl", "stop", "patchli-agent").Run()
 		execCommand("systemctl", "disable", "patchli-agent").Run()
-		if err := os.Remove("/etc/systemd/system/patchli-agent.service"); err != nil {
+		if err := removeFunc("/etc/systemd/system/patchli-agent.service"); err != nil {
 			errs = append(errs, err)
 		}
 		execCommand("systemctl", "daemon-reload").Run()
 	}
 
 	// 2. Remove configuration and state
-	if err := os.RemoveAll("/etc/patchli"); err != nil {
+	if err := removeAllFunc("/etc/patchli"); err != nil {
 		errs = append(errs, err)
 	}
-	if err := os.RemoveAll("/var/lib/patchli"); err != nil {
+	if err := removeAllFunc("/var/lib/patchli"); err != nil {
 		errs = append(errs, err)
 	}
 

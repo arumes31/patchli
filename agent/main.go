@@ -100,8 +100,7 @@ func RunAgent(ctx context.Context) {
 	u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
 	log.Printf("Connecting to %s", u.String())
 
-	dialer := websocket.DefaultDialer
-	conn, _, err := dialer.DialContext(ctx, u.String(), nil)
+	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
 		log.Printf("WebSocket dial error: %v. Falling back to HTTP Long-Polling...", err)
 		startHTTPPolling(ctx, serverURL, nodeID, pm)
@@ -110,29 +109,7 @@ func RunAgent(ctx context.Context) {
 	defer conn.Close()
 
 	// Heartbeat loop
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				hostname, _ := os.Hostname()
-				payload := HeartbeatPayload{
-					MacAddress:   nodeID,
-					Hostname:     hostname,
-					RebootNeeded: pm.RebootRequired(),
-				}
-				data, _ := json.Marshal(payload)
-				msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
-				if err := conn.WriteJSON(msg); err != nil {
-					log.Printf("Heartbeat error: %v", err)
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+	go runHeartbeat(ctx, conn, nodeID, pm)
 
 	// Command listener loop
 	for {
@@ -141,12 +118,8 @@ func RunAgent(ctx context.Context) {
 			return
 		default:
 			var wsMsg WSMessage
-			conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 			err := conn.ReadJSON(&wsMsg)
 			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
 				log.Printf("Read error: %v", err)
 				return
 			}
@@ -155,7 +128,32 @@ func RunAgent(ctx context.Context) {
 				var cmd CommandPayload
 				json.Unmarshal(wsMsg.Payload, &cmd)
 				log.Printf("Received command: %s (Job: %s)", cmd.Action, cmd.ID)
+
 				go executeCommand(conn, pm, cmd)
+			}
+		}
+	}
+}
+
+func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm updater.PackageManager) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			hostname, _ := os.Hostname()
+			payload := HeartbeatPayload{
+				MacAddress:   nodeID,
+				Hostname:     hostname,
+				RebootNeeded: pm.RebootRequired(),
+			}
+			data, _ := json.Marshal(payload)
+			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
+			if err := conn.WriteJSON(msg); err != nil {
+				log.Printf("Heartbeat error: %v", err)
+				return
 			}
 		}
 	}
@@ -175,17 +173,21 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 			RebootNeeded: pm.RebootRequired(),
 		}
 		data, _ := json.Marshal(hb)
-		
+
 		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
 		req.Header.Set("Content-Type", "application/json")
-		
+
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("HTTP Poll error: %v", err)
-			time.Sleep(10 * time.Second)
+			select {
+			case <-time.After(10 * time.Second):
+			case <-ctx.Done():
+				return
+			}
 			continue
 		}
-		
+
 		if resp.StatusCode == http.StatusOK {
 			var cmd CommandPayload
 			if err := json.NewDecoder(resp.Body).Decode(&cmd); err == nil && cmd.Action != "" {
@@ -194,9 +196,9 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 		}
 		resp.Body.Close()
 		select {
-		case <-ticker.C:
 		case <-ctx.Done():
 			return
+		case <-ticker.C:
 		}
 	}
 }
@@ -279,8 +281,10 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 	// conn.WriteJSON(...)
 }
 
+var agentDownloadURL = "http://localhost:8080/download/agent"
+
 func performSecureAgentUpdate(ctx context.Context) updater.UpdateResult {
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/download/agent", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", agentDownloadURL, nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}

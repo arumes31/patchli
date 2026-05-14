@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var execCommand = exec.Command
+
 func main() {
 	agentPath := "/usr/local/bin/patchli-agent"
 	if len(os.Args) > 1 {
@@ -25,7 +27,7 @@ func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
 	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {
-		cmd := exec.Command(agentPath)
+		cmd := execCommand(agentPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
