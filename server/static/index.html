@@ -1,82 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Patchli - Fleet Dashboard</title>
+    <script src="/assets/js/tailwind.js"></script>
+    <link href="/assets/css/fonts.css" rel="stylesheet"/>
     <style>
-        :root { --primary: #2563eb; --bg: #f8fafc; --text: #1e293b; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 2rem; }
-        .nav { margin-bottom: 2rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 1rem; }
-        .nav a { margin-right: 1.5rem; text-decoration: none; color: var(--primary); font-weight: 600; }
-        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem; }
-        .stat-card { background: white; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; }
-        .node-list { background: white; border-radius: 0.5rem; border: 1px solid #e2e8f0; overflow: hidden; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e2e8f0; }
-        th { background: #f1f5f9; }
-        .status-badge { padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
-        .status-online { background: #dcfce7; color: #166534; }
+        body { 
+            font-family: 'Quicksand', sans-serif; 
+            background: radial-gradient(circle at top left, #0f172a, #134e4a); 
+            color: #ccfbf1; 
+            min-height: 100vh; 
+            margin: 0; 
+            display: flex; 
+            overflow-x: hidden; 
+        } 
+        .data-mono { font-family: 'JetBrains Mono', monospace; } 
+        .blob-sidebar { background: rgba(20, 184, 166, 0.05); backdrop-filter: blur(10px); border-right: 1px solid rgba(20, 184, 166, 0.2); } 
+        .nav-link { color: #99f6e4; text-decoration: none; padding: 0.4rem 1rem; border-radius: 50px; background: rgba(255, 255, 255, 0.05); transition: all 0.3s ease; font-size: 0.8rem; } 
+        .nav-link:hover, .nav-link.active { background: rgba(20, 184, 166, 0.2); color: #fff; }
+        .glass-panel { background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(12px); border: 1px solid rgba(20, 184, 166, 0.1); border-radius: 1.5rem; } 
+        table { width: 100%; border-collapse: separate; border-spacing: 0 0.25rem; } 
+        th { text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: #5eead4; border-bottom: 1px solid rgba(20, 184, 166, 0.1); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; } 
+        td { padding: 0.75rem 1rem; background: rgba(20, 184, 166, 0.02); font-size: 0.85rem; } 
+        .status-badge { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; padding: 0.1rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3); } 
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #134e4a; border-radius: 10px; }
     </style>
 </head>
 <body>
-    <div class="nav">
-        <a href="/">Dashboard</a>
-        <a href="/setup">Add Agent</a>
-        <a href="/groups">Groups</a>
-        <a href="/settings">Settings</a>
-    </div>
-
-    <h1>Fleet Overview</h1>
-
-    <div class="stats">
-        <div class="stat-card">
-            <h3>Total Nodes</h3>
-            <p style="font-size: 2rem; font-weight: bold; margin: 0;">12</p>
+    <aside class="blob-sidebar w-64 h-screen sticky top-0 flex flex-col p-6 border-r border-teal-900/30">
+        <div class="mb-8">
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-emerald-500">Fleet.OS</h1>
         </div>
-        <div class="stat-card">
-            <h3>Compliance</h3>
-            <p style="font-size: 2rem; font-weight: bold; margin: 0; color: #166534;">92%</p>
+        <nav class="flex flex-col gap-2 mb-12">
+            <a class="nav-link active" href="/">Dashboard</a>
+            <a class="nav-link" href="/setup">Add Agent</a>
+            <a class="nav-link" href="/groups">Groups</a>
+            <a class="nav-link" href="/settings">Settings</a>
+        </nav>
+        <div class="flex flex-col gap-6 mt-auto">
+            <div class="p-4 rounded-2xl bg-teal-950/30 border border-teal-900/20">
+                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold">Vitality</h3>
+                <p class="text-4xl font-bold data-mono" id="stat-vitality">0</p>
+                <div class="mt-1 text-[10px] opacity-40">ACTIVE</div>
+            </div>
+            <div class="p-4 rounded-2xl bg-teal-950/30 border border-teal-900/20">
+                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold">Immune</h3>
+                <p class="text-4xl font-bold data-mono" id="stat-immune">0%</p>
+                <div class="mt-1 text-[10px] opacity-40">COMPLIANCE</div>
+            </div>
+            <div class="p-4 rounded-2xl bg-teal-950/30 border border-teal-900/20">
+                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold">Recovery</h3>
+                <p class="text-4xl font-bold data-mono" id="stat-recovery">0</p>
+                <div class="mt-1 text-[10px] opacity-40">REBOOTS</div>
+            </div>
         </div>
-        <div class="stat-card">
-            <h3>Reboot Required</h3>
-            <p style="font-size: 2rem; font-weight: bold; margin: 0; color: #991b1b;">2</p>
+    </aside>
+    <main class="flex-1 p-8 overflow-y-auto">
+        <div class="max-w-5xl">
+            <header class="flex justify-between items-end mb-8">
+                <h2 class="text-3xl font-bold text-teal-100">Fleet Overview</h2>
+                <span class="text-xs data-mono text-teal-500 opacity-60">SYSTEM STABLE // AUTO-PATCH ENABLED</span>
+            </header>
+            <div class="glass-panel p-6 mb-8">
+                <h3 class="text-sm font-semibold mb-4 flex items-center gap-2">
+                    <span class="w-2 h-2 bg-teal-400 rounded-full animate-ping"></span>
+                    Live Patch Logs
+                </h3>
+                <div class="custom-scrollbar bg-slate-950/90 text-emerald-400 data-mono p-4 h-64 overflow-y-scroll rounded-xl border border-teal-900/50 text-xs leading-relaxed" id="log-terminal">
+                    <span class="opacity-30">[System]</span> Initializing organic stream...<br/>
+                    <span class="opacity-30">[System]</span> Waiting for patch logs to synchronize...<br/>
+                </div>
+            </div>
+            <div class="glass-panel p-6">
+                <h3 class="text-sm font-semibold mb-4">Active Fleet Registry</h3>
+                <div class="overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Hostname</th>
+                                <th>Status</th>
+                                <th>OS</th>
+                                <th>Kernel</th>
+                                <th>Pulse</th>
+                            </tr>
+                        </thead>
+                        <tbody class="data-mono" id="node-table-body">
+                            <!-- Dynamic Rows -->
+                            <tr id="empty-row">
+                                <td colspan="5" class="text-center opacity-40 py-8">No nodes detected. Waiting for heartbeats...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-    </div>
+    </main>
 
-    <div class="node-list">
-        <h2>Live Patch Logs</h2>
-        <div id="log-terminal" style="background: #1e293b; color: #10b981; font-family: monospace; padding: 1rem; height: 200px; overflow-y: scroll; border-radius: 0.5rem; margin-bottom: 2rem;">
-            [System] Waiting for patch logs to stream...
-        </div>
+    <script>
+        const terminal = document.getElementById('log-terminal');
+        const nodeTableBody = document.getElementById('node-table-body');
+        const emptyRow = document.getElementById('empty-row');
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Hostname</th>
-                    <th>Status</th>
-                    <th>OS</th>
-                    <th>Kernel</th>
-                    <th>Last Heartbeat</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>prod-db-01</td>
-                    <td><span class="status-badge status-online">Online</span></td>
-                    <td>Ubuntu 22.04</td>
-                    <td>5.15.0-72-generic</td>
-                    <td>2 minutes ago</td>
-                </tr>
-                <tr>
-                    <td>prod-app-01</td>
-                    <td><span class="status-badge status-online">Online</span></td>
-                    <td>Alpine 3.18</td>
-                    <td>6.1.31-0-lts</td>
-                    <td>30 seconds ago</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+        function addLog(msg, type = 'system') {
+            const span = document.createElement('span');
+            span.className = type === 'system' ? 'opacity-30' : 'text-teal-500';
+            span.textContent = `[${type.charAt(0).toUpperCase() + type.slice(1)}] `;
+            
+            const content = document.createTextNode(msg);
+            const br = document.createElement('br');
+            
+            terminal.appendChild(span);
+            terminal.appendChild(content);
+            terminal.appendChild(br);
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        async function updateStats() {
+            try {
+                const res = await fetch('/api/v1/stats');
+                const data = await res.json();
+                document.getElementById('stat-vitality').textContent = data.vitality;
+                document.getElementById('stat-immune').textContent = data.immune;
+                document.getElementById('stat-recovery').textContent = data.recovery;
+            } catch (err) {
+                console.error('Failed to fetch stats:', err);
+            }
+        }
+
+        async function updateNodes() {
+            try {
+                const res = await fetch('/api/v1/nodes');
+                const nodes = await res.json();
+                
+                if (nodes.length > 0) {
+                    if (emptyRow) emptyRow.remove();
+                    
+                    // Clear existing rows except header (if any, but we use tbody)
+                    nodeTableBody.innerHTML = '';
+                    
+                    nodes.forEach(node => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="font-bold text-teal-200">${node.hostname}</td>
+                            <td><span class="status-badge">${node.status}</span></td>
+                            <td>${node.os}</td>
+                            <td class="opacity-60">${node.kernel}</td>
+                            <td class="text-teal-400/60 italic text-xs">${timeAgo(node.last_heartbeat)}</td>
+                        `;
+                        nodeTableBody.appendChild(tr);
+                    });
+                }
+            } catch (err) {
+                console.error('Failed to fetch nodes:', err);
+            }
+        }
+
+        function timeAgo(dateString) {
+            const date = new Date(dateString);
+            const now = new Date();
+            const seconds = Math.floor((now - date) / 1000);
+            
+            if (seconds < 60) return 'Just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            return `${Math.floor(minutes / 60)}h ago`;
+        }
+
+        // SSE for logs
+        if (!!window.EventSource) {
+            const source = new EventSource('/api/v1/stream');
+            source.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                addLog(data.message, data.level || 'info');
+            };
+            source.onerror = function() {
+                console.error("SSE connection lost. Reconnecting...");
+            };
+        }
+
+        // Initial load and polling
+        updateStats();
+        updateNodes();
+        setInterval(updateStats, 5000);
+        setInterval(updateNodes, 10000);
+
+        addLog("Connection established via local backbone.", "system");
+    </script>
 </body>
 </html>

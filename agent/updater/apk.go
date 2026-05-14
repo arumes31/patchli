@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
 )
 
 // ApkManager implements the PackageManager interface for apk (Alpine).
 type ApkManager struct{}
 
 func (m *ApkManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	cmd := exec.CommandContext(ctx, "apk", "update")
+	cmd := execCommandContext(ctx, "apk", "update")
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -22,7 +21,7 @@ func (m *ApkManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 		return UpdateResult{Success: false, Output: out.String(), Error: err}, err
 	}
 
-	cmd = exec.CommandContext(ctx, "apk", "version", "-l", "<")
+	cmd = execCommandContext(ctx, "apk", "upgrade", "--simulate")
 	out.Reset()
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -37,7 +36,7 @@ func (m *ApkManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 		args = append([]string{"add"}, packages...)
 	}
 
-	cmd := exec.CommandContext(ctx, "apk", args...)
+	cmd := execCommandContext(ctx, "apk", args...)
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -48,10 +47,8 @@ func (m *ApkManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func (m *ApkManager) RebootRequired() bool {
-	// Alpine doesn't have a standard reboot-required file like Debian.
-	// This would require a more sophisticated check, e.g. comparing kernel versions.
-	// For simplicity, we return false or implement a custom check.
-	return false
+	_, err := statFunc("/run/reboot-required")
+	return err == nil
 }
 
 func (m *ApkManager) PreFlightCheck(ctx context.Context) error {
@@ -60,14 +57,17 @@ func (m *ApkManager) PreFlightCheck(ctx context.Context) error {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "pgrep", "-x", "apk")
-	if err := cmd.Run(); err == nil {
-		return fmt.Errorf("apk package manager is currently locked or in use")
+	// 2. Process lock detection
+	if _, err := statFunc("/lib/apk/db/lock"); err == nil {
+		cmd := execCommandContext(ctx, "pgrep", "apk")
+		if err := cmd.Run(); err == nil {
+			return fmt.Errorf("apk package manager is currently locked or in use")
+		}
 	}
 	return nil
 }
 
 func (m *ApkManager) Cleanup(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "apk", "cache", "clean")
+	cmd := execCommandContext(ctx, "apk", "cache", "clean")
 	return cmd.Run()
 }

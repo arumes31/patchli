@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -13,6 +15,13 @@ func main() {
 		agentPath = os.Args[1]
 	}
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	runWatchdog(agentPath, sigChan)
+}
+
+func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
 	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {
@@ -24,21 +33,41 @@ func main() {
 		err := cmd.Start()
 		if err != nil {
 			log.Printf("Watchdog: Failed to start agent: %v. Retrying in 10s...", err)
-			time.Sleep(10 * time.Second)
-			continue
+			select {
+			case <-sigChan:
+				return
+			case <-time.After(10 * time.Second):
+				continue
+			}
 		}
 
-		// Wait for the agent to exit
-		err = cmd.Wait()
-		if err != nil {
-			log.Printf("Watchdog: Agent exited with error: %v", err)
-		} else {
-			log.Printf("Watchdog: Agent exited cleanly.")
-			// If it exited cleanly (e.g. self-destruct or planned shutdown), we might want to stop the watchdog too.
-			// For self-healing, we restart anyway unless instructed otherwise via IPC/signal.
+		done := make(chan error, 1)
+		go func() {
+			done <- cmd.Wait()
+		}()
+
+		select {
+		case sig := <-sigChan:
+			log.Printf("Watchdog received signal: %v", sig)
+			if cmd.Process != nil {
+				cmd.Process.Signal(sig)
+			}
+			<-done
+			log.Println("Watchdog exiting cleanly.")
+			return
+		case err := <-done:
+			if err != nil {
+				log.Printf("Watchdog: Agent exited with error: %v", err)
+			} else {
+				log.Printf("Watchdog: Agent exited cleanly.")
+			}
 		}
 
 		log.Println("Watchdog: Restarting agent in 5 seconds...")
-		time.Sleep(5 * time.Second)
+		select {
+		case <-sigChan:
+			return
+		case <-time.After(5 * time.Second):
+		}
 	}
 }

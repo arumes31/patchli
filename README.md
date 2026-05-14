@@ -4,7 +4,7 @@ Patchli is a high-performance, distributed Patch Management system designed to s
 
 ## Architecture
 
-*   **Control Plane:** Go 1.26, PostgreSQL 15, Redis 7. Features WebSockets and gRPC for real-time communication, and a Worker Pool for job orchestration.
+*   **Control Plane:** Go 1.26, PostgreSQL 15 (with `golang-migrate`), Redis 7. Features WebSockets and gRPC for real-time communication, and a Worker Pool for job orchestration.
 *   **Intelligent Agent:** Go 1.26. A lightweight, self-updating, self-healing agent that supports native package managers.
 
 ## Advanced Features Implemented
@@ -13,6 +13,7 @@ Patchli is a high-performance, distributed Patch Management system designed to s
 *   **Resilience:** Self-healing watchdog, HTTP long-polling fallback, persistent UUID identity, state recovery after reboots.
 *   **Orchestration:** Maintenance Windows, Pre/Post-Patch Scripts, Health Checks, Job Pausing/Resuming.
 *   **Security:** HMAC-based zero-touch registration, JWT persistent authentication, Disk Space & Process Lock pre-checks.
+*   **Database:** Versioned migrations using `golang-migrate` and embedded SQL files.
 *   **CI/CD:** Automated testing, Code Coverage enforcement (80%), Chaos Engineering tests (Pumba), `gosec` SAST, and `govulncheck`.
 
 ## Getting Started

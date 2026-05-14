@@ -3,139 +3,136 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Patchli - Agent Setup Guide</title>
+    <title>Patchli - Add Agent</title>
+    <script src="/assets/js/tailwind.js"></script>
+    <link href="/assets/css/fonts.css" rel="stylesheet"/>
     <style>
-        :root {
-            --primary: #2563eb;
-            --bg: #f8fafc;
-            --text: #1e293b;
-            --card: #ffffff;
-            --border: #e2e8f0;
+        body { 
+            font-family: 'Quicksand', sans-serif; 
+            background: radial-gradient(circle at top left, #0f172a, #134e4a); 
+            color: #ccfbf1; 
+            min-height: 100vh; 
+            margin: 0; 
+            display: flex; 
+            overflow-x: hidden; 
+        } 
+        .blob-sidebar { background: rgba(20, 184, 166, 0.05); backdrop-filter: blur(10px); border-right: 1px solid rgba(20, 184, 166, 0.2); } 
+        .nav-link { color: #99f6e4; text-decoration: none; padding: 0.4rem 1rem; border-radius: 50px; background: rgba(255, 255, 255, 0.05); transition: all 0.3s ease; font-size: 0.8rem; } 
+        .nav-link:hover, .nav-link.active { background: rgba(20, 184, 166, 0.2); color: #fff; }
+        .glass-panel { background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(12px); border: 1px solid rgba(20, 184, 166, 0.1); border-radius: 1.5rem; } 
+        .data-mono { font-family: 'JetBrains Mono', monospace; }
+        select, input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            color: #ccfbf1;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            width: 100%;
+            outline: none;
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg);
-            color: var(--text);
-            margin: 0;
-            padding: 2rem;
-            line-height: 1.5;
+        select:focus, input:focus { border-color: #5eead4; }
+        button.primary {
+            background: linear-gradient(135deg, #14b8a6, #10b981);
+            color: #fff;
+            font-weight: 700;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
         }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
+        button.primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4); }
+        code {
+            background: #020617;
+            color: #5eead4;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            display: block;
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+            position: relative;
+            word-break: break-all;
+            white-space: pre-wrap;
         }
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 0.5rem;
-            padding: 2rem;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-        h1 { font-size: 1.875rem; margin-top: 0; }
-        p { color: #64748b; }
-        .step { margin-bottom: 2rem; }
-        .step-number {
-            background: var(--primary);
-            color: white;
-            width: 24px;
-            height: 24px;
+        .step-num {
+            background: rgba(20, 184, 166, 0.1);
+            color: #5eead4;
+            width: 28px;
+            height: 28px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            font-size: 0.875rem;
-            margin-right: 0.5rem;
+            font-weight: 700;
+            margin-right: 0.75rem;
+            border: 1px solid rgba(20, 184, 166, 0.3);
         }
-        label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
-        select, input {
-            width: 100%;
-            padding: 0.5rem;
-            border: 1px solid var(--border);
-            border-radius: 0.25rem;
-            margin-bottom: 1rem;
-        }
-        code {
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 1rem;
-            border-radius: 0.375rem;
-            display: block;
-            overflow-x: auto;
-            position: relative;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-        .copy-btn {
-            position: absolute;
-            top: 0.5rem;
-            right: 0.5rem;
-            background: #475569;
-            color: white;
-            border: none;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            cursor: pointer;
-            font-size: 0.75rem;
-        }
-        .copy-btn:hover { background: #64748b; }
-        button.primary {
-            background: var(--primary);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 0.375rem;
-            font-weight: 600;
-            cursor: pointer;
-        }
-        button.primary:hover { background: #1d4ed8; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Add New Agent</h1>
-            <p>Follow this guided setup to register a new node into the Patchli fleet.</p>
-        </header>
+    <aside class="blob-sidebar w-64 h-screen sticky top-0 flex flex-col p-6 border-r border-teal-900/30">
+        <div class="mb-8">
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-emerald-500">Fleet.OS</h1>
+        </div>
+        <nav class="flex flex-col gap-2 mb-12">
+            <a class="nav-link" href="/">Dashboard</a>
+            <a class="nav-link active" href="/setup">Add Agent</a>
+            <a class="nav-link" href="/groups">Groups</a>
+            <a class="nav-link" href="/settings">Settings</a>
+        </nav>
+    </aside>
 
-        <main class="card">
-            <div class="step">
-                <label for="node-os"><span class="step-number">1</span> Select Operating System</label>
-                <select id="node-os">
-                    <option value="linux">Linux (Systemd - Ubuntu, Debian, RHEL, CentOS, Arch, SUSE)</option>
-                    <option value="alpine">Alpine Linux (OpenRC)</option>
-                    <option value="windows">Windows Server (PowerShell)</option>
-                </select>
-                <p><small>The installation script varies depending on the OS and init system.</small></p>
-            </div>
+    <main class="flex-1 p-8 overflow-y-auto">
+        <div class="max-w-3xl">
+            <header class="mb-8">
+                <h2 class="text-3xl font-bold text-teal-100">Add New Agent</h2>
+                <p class="text-teal-500/60 mt-2">Deploy the Patchli agent to your infrastructure in seconds.</p>
+            </header>
 
-            <div class="step">
-                <label for="node-group"><span class="step-number">2</span> Select Target Group</label>
-                <select id="node-group">
-                    <option value="default">Default (Production)</option>
-                    <option value="staging">Staging</option>
-                    <option value="edge">Edge Devices</option>
-                </select>
-                <p><small>Grouping helps you manage patch parallelism and maintenance windows.</small></p>
-            </div>
+            <div class="glass-panel p-8 space-y-8">
+                <div class="step">
+                    <h3 class="text-lg font-semibold mb-4 flex items-center">
+                        <span class="step-num">1</span> Select Environment
+                    </h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="text-xs uppercase tracking-widest text-teal-500/60 font-bold mb-2 block">OS Flavor</label>
+                            <select id="node-os">
+                                <option value="linux">Linux (Debian/Ubuntu/RHEL)</option>
+                                <option value="alpine">Alpine Linux</option>
+                                <option value="windows">Windows Server</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase tracking-widest text-teal-500/60 font-bold mb-2 block">Target Group</label>
+                            <select id="node-group">
+                                <option value="default">Default</option>
+                                <option value="staging">Staging</option>
+                                <option value="edge">Edge</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
 
-            <div class="step">
-                <label><span class="step-number">3</span> Installation Command</label>
-                <p>Run this command on the target server as <strong>Administrator/root</strong>. This will download the agent, install the service, and perform initial registration.</p>
-                <div style="position: relative;">
-                    <code id="install-command">
-                        curl -sSL {{.BaseURL}}/api/v1/setup?group=default&os=linux | sudo bash
-                    </code>
-                    <button class="copy-btn" onclick="copyCommand()">Copy</button>
+                <div class="step">
+                    <h3 class="text-lg font-semibold mb-4 flex items-center">
+                        <span class="step-num">2</span> Execute Registration
+                    </h3>
+                    <p class="text-sm text-teal-100/60 mb-4">Run this command on the target server as root/administrator.</p>
+                    <div class="relative">
+                        <code id="install-command">
+                            curl -sSL {{.BaseURL}}/api/v1/setup?group=default&os=linux | sudo bash
+                        </code>
+                        <button onclick="copyCommand()" class="absolute top-4 right-4 text-xs bg-teal-500/20 hover:bg-teal-500/40 text-teal-300 px-3 py-1 rounded-md transition-colors">Copy</button>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-teal-900/30 flex justify-between items-center">
+                    <p class="text-xs text-teal-500/40 italic">Waiting for node registration...</p>
+                    <button class="primary" onclick="window.location.href='/'">Return to Dashboard</button>
                 </div>
             </div>
-
-            <div class="step">
-                <label><span class="step-number">4</span> Verify Registration</label>
-                <p>Once the script finishes, your node will appear in the <strong>Inventory</strong> tab within 30 seconds.</p>
-                <button class="primary" onclick="window.location.href='/'">Go to Inventory</button>
-            </div>
-        </main>
-    </div>
+        </div>
+    </main>
 
     <script>
         const osSelect = document.getElementById('node-os');
@@ -163,13 +160,10 @@
         function copyCommand() {
             const text = commandCode.innerText.trim();
             navigator.clipboard.writeText(text).then(() => {
-                const btn = document.querySelector('.copy-btn');
-                btn.innerText = 'Copied!';
-                setTimeout(() => btn.innerText = 'Copy', 2000);
+                alert('Command copied to clipboard!');
             });
         }
 
-        // Initialize
         updateCommand();
     </script>
 </body>

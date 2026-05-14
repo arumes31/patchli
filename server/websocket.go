@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -17,14 +18,25 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// AgentManager tracks active WebSocket connections.
+type AgentDetails struct {
+	Hostname      string `json:"hostname"`
+	MacAddress    string `json:"mac_address"`
+	OS            string `json:"os"`
+	Kernel        string `json:"kernel"`
+	Status        string `json:"status"`
+	LastHeartbeat string `json:"last_heartbeat"`
+}
+
+// AgentManager tracks active WebSocket connections and their details.
 type AgentManager struct {
-	agents map[string]*websocket.Conn // mac_address -> connection
-	mu     sync.RWMutex
+	agents  map[string]*websocket.Conn // mac_address -> connection
+	details map[string]*AgentDetails    // mac_address -> details
+	mu      sync.RWMutex
 }
 
 var manager = AgentManager{
-	agents: make(map[string]*websocket.Conn),
+	agents:  make(map[string]*websocket.Conn),
+	details: make(map[string]*AgentDetails),
 }
 
 // Message types for communication
@@ -99,6 +111,14 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			
 			manager.mu.Lock()
 			manager.agents[macAddr] = conn
+			manager.details[macAddr] = &AgentDetails{
+				Hostname:      p.Hostname,
+				MacAddress:    p.MacAddress,
+				OS:            p.OS,
+				Kernel:        p.Kernel,
+				Status:        "Online",
+				LastHeartbeat: time.Now().Format(time.RFC3339),
+			}
 			manager.mu.Unlock()
 
 			// Update node status in DB (skipped for brevity, but this is where it happens)
@@ -133,4 +153,16 @@ func (am *AgentManager) SendCommand(macAddr string, cmd CommandPayload) error {
 	}
 
 	return conn.WriteJSON(msg)
+}
+
+// GetNodes returns a list of all known nodes.
+func (am *AgentManager) GetNodes() []AgentDetails {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+
+	nodes := make([]AgentDetails, 0, len(am.details))
+	for _, d := range am.details {
+		nodes = append(nodes, *d)
+	}
+	return nodes
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -16,12 +17,11 @@ type WebhookPayload struct {
 }
 
 // NotifyWebhooks sends an outward webhook to configured URLs.
-func NotifyWebhooks(payload WebhookPayload) {
-	// In production, these URLs would be fetched from the database based on group settings.
+var NotifyWebhooks = func(payload WebhookPayload) {
 	urls := []string{
-		// os.Getenv("SLACK_WEBHOOK_URL"),
-		// os.Getenv("TEAMS_WEBHOOK_URL"),
-		// os.Getenv("DISCORD_WEBHOOK_URL"),
+		os.Getenv("SLACK_WEBHOOK_URL"),
+		os.Getenv("TEAMS_WEBHOOK_URL"),
+		os.Getenv("DISCORD_WEBHOOK_URL"),
 	}
 
 	for _, u := range urls {

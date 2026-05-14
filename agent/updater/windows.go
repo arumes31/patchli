@@ -6,7 +6,6 @@ package updater
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -22,7 +21,7 @@ $UpdateSearcher = $UpdateSession.CreateUpdateSearcher()
 $SearchResult = $UpdateSearcher.Search("IsInstalled=0")
 $SearchResult.Updates.Count
 `
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
+	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return UpdateResult{Success: false, Output: string(out), Error: err}, err
@@ -44,7 +43,7 @@ if ($pkgNames.Length -gt 0 -and $pkgNames[0] -ne "") {
 	Install-WindowsUpdate -AcceptAll -IgnoreReboot
 }
 `
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
+	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.CombinedOutput()
 	return UpdateResult{Success: err == nil, Output: string(out), Error: err}, err
 }
@@ -55,7 +54,7 @@ func (m *WindowsManager) RebootRequired() bool {
 $sysInfo = New-Object -ComObject "Microsoft.Update.SystemInfo"
 $sysInfo.RebootRequired
 `
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
+	cmd := execCommand("powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.Output()
 	return err == nil && string(out) == "True\r\n"
 }
@@ -66,7 +65,7 @@ func (m *WindowsManager) PreFlightCheck(ctx context.Context) error {
 $disk = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='C:'"
 if ($disk.FreeSpace -lt 5368709120) { exit 1 }
 `
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
+	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("insufficient disk space on C:")
 	}
@@ -83,5 +82,5 @@ try {
 	Start-Service wuauserv
 }
 `
-	return exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Run()
+	return execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Run()
 }

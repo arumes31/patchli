@@ -7,6 +7,11 @@ import (
 	"os/exec"
 )
 
+var statFunc = os.Stat
+var execCommand = exec.Command
+var execCommandContext = exec.CommandContext
+var detachProcessFunc = detachProcess
+
 // UpdateResult represents the outcome of an update operation.
 type UpdateResult struct {
 	Success bool
@@ -37,13 +42,13 @@ func SelfDestruct() error {
 	var errs []error
 
 	// 1. Remove systemd service if exists
-	if _, err := os.Stat("/etc/systemd/system/patchli-agent.service"); err == nil {
-		exec.Command("systemctl", "stop", "patchli-agent").Run()
-		exec.Command("systemctl", "disable", "patchli-agent").Run()
+	if _, err := statFunc("/etc/systemd/system/patchli-agent.service"); err == nil {
+		execCommand("systemctl", "stop", "patchli-agent").Run()
+		execCommand("systemctl", "disable", "patchli-agent").Run()
 		if err := os.Remove("/etc/systemd/system/patchli-agent.service"); err != nil {
 			errs = append(errs, err)
 		}
-		exec.Command("systemctl", "daemon-reload").Run()
+		execCommand("systemctl", "daemon-reload").Run()
 	}
 
 	// 2. Remove configuration and state
@@ -56,8 +61,8 @@ func SelfDestruct() error {
 
 	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
 	script := `sleep 2; rm -f /usr/local/bin/patchli-agent`
-	cmd := exec.Command("sh", "-c", script)
-	detachProcess(cmd)
+	cmd := execCommand("sh", "-c", script)
+	detachProcessFunc(cmd)
 	if err := cmd.Start(); err != nil {
 		errs = append(errs, err)
 	}
@@ -71,32 +76,32 @@ func SelfDestruct() error {
 // DetectPackageManager determines the underlying OS package manager.
 func DetectPackageManager() (PackageManager, error) {
 	// Check for apk (Alpine)
-	if _, err := os.Stat("/sbin/apk"); err == nil {
+	if _, err := statFunc("/sbin/apk"); err == nil {
 		return &ApkManager{}, nil
 	}
 	
 	// Check for apt (Debian/Ubuntu)
-	if _, err := os.Stat("/usr/bin/apt-get"); err == nil {
+	if _, err := statFunc("/usr/bin/apt-get"); err == nil {
 		return &AptManager{}, nil
 	}
 
 	// Check for dnf (RHEL/CentOS/Rocky/Alma 8+)
-	if _, err := os.Stat("/usr/bin/dnf"); err == nil {
+	if _, err := statFunc("/usr/bin/dnf"); err == nil {
 		return &DnfManager{}, nil
 	}
 
 	// Check for yum (Older RHEL/CentOS)
-	if _, err := os.Stat("/usr/bin/yum"); err == nil {
+	if _, err := statFunc("/usr/bin/yum"); err == nil {
 		return &YumManager{}, nil
 	}
 
 	// Check for pacman (Arch Linux)
-	if _, err := os.Stat("/usr/bin/pacman"); err == nil {
+	if _, err := statFunc("/usr/bin/pacman"); err == nil {
 		return &PacmanManager{}, nil
 	}
 
 	// Check for zypper (SUSE)
-	if _, err := os.Stat("/usr/bin/zypper"); err == nil {
+	if _, err := statFunc("/usr/bin/zypper"); err == nil {
 		return &ZypperManager{}, nil
 	}
 

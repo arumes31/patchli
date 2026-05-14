@@ -15,7 +15,7 @@ type State struct {
 	StartTime int64    `json:"start_time"`
 }
 
-const stateFile = "/var/lib/patchli/state.json"
+var stateFile = "/var/lib/patchli/state.json"
 
 // SaveState persists the current job state to disk.
 func SaveState(state State) error {

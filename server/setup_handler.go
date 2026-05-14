@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"text/template"
 	"time"
 )
@@ -58,7 +57,7 @@ if (!(Test-Path -Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigD
 @"
 server_url: $ServerUrl
 group: $Group
-auth_token: `$AgentToken
+auth_token: ` + "`" + `$AgentToken
 "@ | Out-File -FilePath "$ConfigDir\config.yaml" -Encoding UTF8
 
 Write-Host "4. Installing Windows Service..."
@@ -177,7 +176,7 @@ echo "Check your dashboard to verify registration."
 
 // ServeSetupUI serves the guided setup HTML page.
 func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFiles("server/static/setup.html")
+	tmpl, err := template.ParseFiles("static/setup.html")
 	if err != nil {
 		http.Error(w, "Failed to load setup page", http.StatusInternalServerError)
 		return
