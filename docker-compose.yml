@@ -11,6 +11,7 @@ services:
       - DB_URL=postgres://postgres:password@postgres:5432/patchli?sslmode=disable
       - REDIS_URL=redis:6379
       - JWT_SECRET=supersecretjwtkey123
+      - BASE_URL=${BASE_URL:-http://localhost:8080}
     depends_on:
       - postgres
       - redis

@@ -62,6 +62,8 @@
             display: block;
             overflow-x: auto;
             position: relative;
+            white-space: pre-wrap;
+            word-break: break-all;
         }
         .copy-btn {
             position: absolute;
@@ -92,12 +94,22 @@
     <div class="container">
         <header>
             <h1>Add New Agent</h1>
-            <p>Follow this guided setup to register a new Linux node into the Patchli fleet.</p>
+            <p>Follow this guided setup to register a new node into the Patchli fleet.</p>
         </header>
 
         <main class="card">
             <div class="step">
-                <label for="node-group"><span class="step-number">1</span> Select Target Group</label>
+                <label for="node-os"><span class="step-number">1</span> Select Operating System</label>
+                <select id="node-os">
+                    <option value="linux">Linux (Systemd - Ubuntu, Debian, RHEL, CentOS, Arch, SUSE)</option>
+                    <option value="alpine">Alpine Linux (OpenRC)</option>
+                    <option value="windows">Windows Server (PowerShell)</option>
+                </select>
+                <p><small>The installation script varies depending on the OS and init system.</small></p>
+            </div>
+
+            <div class="step">
+                <label for="node-group"><span class="step-number">2</span> Select Target Group</label>
                 <select id="node-group">
                     <option value="default">Default (Production)</option>
                     <option value="staging">Staging</option>
@@ -107,18 +119,18 @@
             </div>
 
             <div class="step">
-                <label><span class="step-number">2</span> Installation Command</label>
-                <p>Run this command on the target server as <strong>root</strong>. This will download the agent, install the systemd service, and perform initial registration.</p>
+                <label><span class="step-number">3</span> Installation Command</label>
+                <p>Run this command on the target server as <strong>Administrator/root</strong>. This will download the agent, install the service, and perform initial registration.</p>
                 <div style="position: relative;">
                     <code id="install-command">
-                        curl -sSL http://{{.ServerHost}}/api/v1/setup?group=default | sudo bash
+                        curl -sSL {{.BaseURL}}/api/v1/setup?group=default&os=linux | sudo bash
                     </code>
                     <button class="copy-btn" onclick="copyCommand()">Copy</button>
                 </div>
             </div>
 
             <div class="step">
-                <label><span class="step-number">3</span> Verify Registration</label>
+                <label><span class="step-number">4</span> Verify Registration</label>
                 <p>Once the script finishes, your node will appear in the <strong>Inventory</strong> tab within 30 seconds.</p>
                 <button class="primary" onclick="window.location.href='/'">Go to Inventory</button>
             </div>
@@ -126,23 +138,39 @@
     </div>
 
     <script>
+        const osSelect = document.getElementById('node-os');
         const groupSelect = document.getElementById('node-group');
         const commandCode = document.getElementById('install-command');
-        const serverHost = window.location.host;
+        const baseURL = "{{.BaseURL}}";
 
-        groupSelect.addEventListener('change', () => {
+        function updateCommand() {
+            const os = osSelect.value;
             const group = groupSelect.value;
-            commandCode.innerText = `curl -sSL http://${serverHost}/api/v1/setup?group=${group} | sudo bash`;
-        });
+            const url = `${baseURL}/api/v1/setup?group=${group}&os=${os}`;
+            
+            if (os === "windows") {
+                commandCode.innerText = `Invoke-RestMethod -Uri "${url}" | Invoke-Expression`;
+            } else if (os === "alpine") {
+                commandCode.innerText = `curl -sSL ${url} | su -c sh`;
+            } else {
+                commandCode.innerText = `curl -sSL ${url} | sudo bash`;
+            }
+        }
+
+        osSelect.addEventListener('change', updateCommand);
+        groupSelect.addEventListener('change', updateCommand);
 
         function copyCommand() {
-            const text = commandCode.innerText;
+            const text = commandCode.innerText.trim();
             navigator.clipboard.writeText(text).then(() => {
                 const btn = document.querySelector('.copy-btn');
                 btn.innerText = 'Copied!';
                 setTimeout(() => btn.innerText = 'Copy', 2000);
             });
         }
+
+        // Initialize
+        updateCommand();
     </script>
 </body>
 </html>
