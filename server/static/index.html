@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patchli - Fleet Dashboard</title>
+    <style>
+        :root { --primary: #2563eb; --bg: #f8fafc; --text: #1e293b; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--text); padding: 2rem; }
+        .nav { margin-bottom: 2rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 1rem; }
+        .nav a { margin-right: 1.5rem; text-decoration: none; color: var(--primary); font-weight: 600; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: white; padding: 1.5rem; border-radius: 0.5rem; border: 1px solid #e2e8f0; }
+        .node-list { background: white; border-radius: 0.5rem; border: 1px solid #e2e8f0; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f1f5f9; }
+        .status-badge { padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .status-online { background: #dcfce7; color: #166534; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">Dashboard</a>
+        <a href="/setup">Add Agent</a>
+        <a href="/groups">Groups</a>
+        <a href="/settings">Settings</a>
+    </div>
+
+    <h1>Fleet Overview</h1>
+
+    <div class="stats">
+        <div class="stat-card">
+            <h3>Total Nodes</h3>
+            <p style="font-size: 2rem; font-weight: bold; margin: 0;">12</p>
+        </div>
+        <div class="stat-card">
+            <h3>Compliance</h3>
+            <p style="font-size: 2rem; font-weight: bold; margin: 0; color: #166534;">92%</p>
+        </div>
+        <div class="stat-card">
+            <h3>Reboot Required</h3>
+            <p style="font-size: 2rem; font-weight: bold; margin: 0; color: #991b1b;">2</p>
+        </div>
+    </div>
+
+    <div class="node-list">
+        <table>
+            <thead>
+                <tr>
+                    <th>Hostname</th>
+                    <th>Status</th>
+                    <th>OS</th>
+                    <th>Kernel</th>
+                    <th>Last Heartbeat</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>prod-db-01</td>
+                    <td><span class="status-badge status-online">Online</span></td>
+                    <td>Ubuntu 22.04</td>
+                    <td>5.15.0-72-generic</td>
+                    <td>2 minutes ago</td>
+                </tr>
+                <tr>
+                    <td>prod-app-01</td>
+                    <td><span class="status-badge status-online">Online</span></td>
+                    <td>Alpine 3.18</td>
+                    <td>6.1.31-0-lts</td>
+                    <td>30 seconds ago</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

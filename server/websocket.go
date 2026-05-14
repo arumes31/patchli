@@ -1,0 +1,133 @@
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"sync"
+
+	"github.com/gorilla/websocket"
+)
+
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		return true // In production, verify origin/token
+	},
+}
+
+// AgentManager tracks active WebSocket connections.
+type AgentManager struct {
+	agents map[string]*websocket.Conn // mac_address -> connection
+	mu     sync.RWMutex
+}
+
+var manager = AgentManager{
+	agents: make(map[string]*websocket.Conn),
+}
+
+// Message types for communication
+const (
+	MsgTypeHeartbeat = "heartbeat"
+	MsgTypeCommand   = "command"
+	MsgTypeLog       = "log"
+	MsgTypeResult    = "result"
+)
+
+type WSMessage struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type HeartbeatPayload struct {
+	MacAddress    string `json:"mac_address"`
+	Hostname      string `json:"hostname"`
+	OS            string `json:"os"`
+	Kernel        string `json:"kernel"`
+	RebootNeeded  bool   `json:"reboot_needed"`
+}
+
+type CommandPayload struct {
+	ID      string   `json:"id"`
+	Action  string   `json:"action"` // e.g., "patch", "reboot"
+	Packages []string `json:"packages,omitempty"`
+}
+
+type LogPayload struct {
+	JobID string `json:"job_id"`
+	Data  string `json:"data"`
+}
+
+func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	var macAddr string
+
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			log.Printf("Read error: %v", err)
+			if macAddr != "" {
+				manager.mu.Lock()
+				delete(manager.agents, macAddr)
+				manager.mu.Unlock()
+				log.Printf("Agent %s disconnected", macAddr)
+			}
+			break
+		}
+
+		var wsMsg WSMessage
+		if err := json.Unmarshal(message, &wsMsg); err != nil {
+			log.Printf("Unmarshal error: %v", err)
+			continue
+		}
+
+		switch wsMsg.Type {
+		case MsgTypeHeartbeat:
+			var p HeartbeatPayload
+			json.Unmarshal(wsMsg.Payload, &p)
+			macAddr = p.MacAddress
+			
+			manager.mu.Lock()
+			manager.agents[macAddr] = conn
+			manager.mu.Unlock()
+
+			// Update node status in DB (skipped for brevity, but this is where it happens)
+			// log.Printf("Heartbeat from %s (%s)", p.Hostname, macAddr)
+
+		case MsgTypeLog:
+			var p LogPayload
+			json.Unmarshal(wsMsg.Payload, &p)
+			// Stream to dashboard or log file
+			// log.Printf("[%s] %s", p.JobID, p.Data)
+
+		case MsgTypeResult:
+			// Handle job completion
+		}
+	}
+}
+
+// SendCommand sends a command to a specific agent.
+func (am *AgentManager) SendCommand(macAddr string, cmd CommandPayload) error {
+	am.mu.RLock()
+	conn, ok := am.agents[macAddr]
+	am.mu.RUnlock()
+
+	if !ok {
+		return http.ErrHandlerTimeout // Or custom "Agent Offline" error
+	}
+
+	payload, _ := json.Marshal(cmd)
+	msg := WSMessage{
+		Type:    MsgTypeCommand,
+		Payload: payload,
+	}
+
+	return conn.WriteJSON(msg)
+}
