@@ -3,29 +3,40 @@ package main
 import (
 	"log"
 	"sync"
+	"time"
 )
 
 type Job struct {
-	ID         string
-	NodeMac    string
-	GroupID    int
-	Action     string
-	Packages   []string
+	ID                 string
+	NodeMac            string
+	GroupID            int
+	Action             string
+	Packages           []string
+	PrePatchScript     string
+	PostPatchScript    string
+	HealthCheckCommand string
+	MaintenanceWindow  *MaintenanceWindow
+}
+
+type MaintenanceWindow struct {
+	StartTime time.Time
+	EndTime   time.Time
 }
 
 type WorkerPool struct {
-	jobQueue chan Job
-	maxWorkers int
-	// groupSemaphores tracks parallelism per group
+	jobQueue        chan Job
+	maxWorkers      int
 	groupSemaphores map[int]chan struct{}
-	mu sync.Mutex
+	pausedGroups    map[int]bool // Tracks if a group's patching is paused
+	mu              sync.Mutex
 }
 
 func NewWorkerPool(maxWorkers int) *WorkerPool {
 	return &WorkerPool{
 		jobQueue:        make(chan Job, 100),
-		maxWorkers:     maxWorkers,
+		maxWorkers:      maxWorkers,
 		groupSemaphores: make(map[int]chan struct{}),
+		pausedGroups:    make(map[int]bool),
 	}
 }
 
@@ -39,6 +50,20 @@ func (wp *WorkerPool) Submit(job Job) {
 	wp.jobQueue <- job
 }
 
+func (wp *WorkerPool) PauseGroup(groupID int) {
+	wp.mu.Lock()
+	wp.pausedGroups[groupID] = true
+	wp.mu.Unlock()
+	log.Printf("Group %d paused.", groupID)
+}
+
+func (wp *WorkerPool) ResumeGroup(groupID int) {
+	wp.mu.Lock()
+	wp.pausedGroups[groupID] = false
+	wp.mu.Unlock()
+	log.Printf("Group %d resumed.", groupID)
+}
+
 func (wp *WorkerPool) worker() {
 	for job := range wp.jobQueue {
 		wp.processJob(job)
@@ -46,34 +71,69 @@ func (wp *WorkerPool) worker() {
 }
 
 func (wp *WorkerPool) processJob(job Job) {
-	// 1. Get or create semaphore for the group
+	// 1. Check if group is paused (Feature 11)
+	for {
+		wp.mu.Lock()
+		paused := wp.pausedGroups[job.GroupID]
+		wp.mu.Unlock()
+		if !paused {
+			break
+		}
+		time.Sleep(5 * time.Second) // Wait and retry if paused
+	}
+
+	// 2. Check Maintenance Window (Feature 5)
+	if job.MaintenanceWindow != nil {
+		now := time.Now()
+		if now.Before(job.MaintenanceWindow.StartTime) || now.After(job.MaintenanceWindow.EndTime) {
+			log.Printf("Job %s delayed: Outside maintenance window.", job.ID)
+			// Re-queue job for later
+			time.Sleep(10 * time.Second)
+			wp.Submit(job)
+			return
+		}
+	}
+
+	// 3. Get or create semaphore for the group
 	wp.mu.Lock()
 	sem, ok := wp.groupSemaphores[job.GroupID]
 	if !ok {
-		// Default parallelism of 2 for this demo, in real app fetch from DB
-		sem = make(chan struct{}, 2) 
+		sem = make(chan struct{}, 2) // Default parallelism of 2
 		wp.groupSemaphores[job.GroupID] = sem
 	}
 	wp.mu.Unlock()
 
-	// 2. Acquire group semaphore (Respect Max Parallelism)
+	// 4. Acquire group semaphore (Respect Max Parallelism)
 	sem <- struct{}{}
 	defer func() { <-sem }()
 
 	log.Printf("Worker executing job %s on node %s (Action: %s)", job.ID, job.NodeMac, job.Action)
 
-	// 3. Send command to agent via WebSocket
+	// 5. Send command to agent via WebSocket
 	err := manager.SendCommand(job.NodeMac, CommandPayload{
-		ID:      job.ID,
-		Action:  job.Action,
-		Packages: job.Packages,
+		ID:                 job.ID,
+		Action:             job.Action,
+		Packages:           job.Packages,
+		PrePatchScript:     job.PrePatchScript,
+		PostPatchScript:    job.PostPatchScript,
+		HealthCheckCommand: job.HealthCheckCommand,
 	})
 
 	if err != nil {
 		log.Printf("Failed to send command to agent %s: %v", job.NodeMac, err)
+		NotifyWebhooks(WebhookPayload{
+			Event:   "job_failed",
+			Message: "Failed to communicate with agent.",
+			JobID:   job.ID,
+			NodeMac: job.NodeMac,
+		})
 		return
 	}
 
-	// In a real system, we'd wait for the 'result' message from the agent
-	// and update the audit_logs table.
+	NotifyWebhooks(WebhookPayload{
+		Event:   "job_started",
+		Message: "Patch job dispatched to agent successfully.",
+		JobID:   job.ID,
+		NodeMac: job.NodeMac,
+	})
 }

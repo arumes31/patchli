@@ -52,3 +52,21 @@ func (m *ApkManager) RebootRequired() bool {
 	// For simplicity, we return false or implement a custom check.
 	return false
 }
+
+func (m *ApkManager) PreFlightCheck(ctx context.Context) error {
+	// Check disk space (require 500MB for Alpine)
+	if err := CheckDiskSpace(500 * 1024 * 1024); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, "pgrep", "apk")
+	if err := cmd.Run(); err == nil {
+		return fmt.Errorf("apk package manager is currently locked or in use")
+	}
+	return nil
+}
+
+func (m *ApkManager) Cleanup(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "apk", "cache", "clean")
+	return cmd.Run()
+}

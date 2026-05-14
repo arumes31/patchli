@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/patchli/agent/updater"
 )
@@ -26,7 +27,7 @@ type WSMessage struct {
 }
 
 type HeartbeatPayload struct {
-	MacAddress    string `json:"mac_address"`
+	MacAddress    string `json:"mac_address"` // Keeping field name for backwards compatibility, but it will hold UUID
 	Hostname      string `json:"hostname"`
 	OS            string `json:"os"`
 	Kernel        string `json:"kernel"`
@@ -34,9 +35,24 @@ type HeartbeatPayload struct {
 }
 
 type CommandPayload struct {
-	ID      string   `json:"id"`
-	Action  string   `json:"action"`
-	Packages []string `json:"packages,omitempty"`
+	ID                 string   `json:"id"`
+	Action             string   `json:"action"`
+	Packages           []string `json:"packages,omitempty"`
+	PrePatchScript     string   `json:"pre_patch_script,omitempty"`
+	PostPatchScript    string   `json:"post_patch_script,omitempty"`
+	HealthCheckCommand string   `json:"health_check_command,omitempty"`
+}
+
+func getOrGenerateIdentity() string {
+	idFile := "/etc/patchli/node_id"
+	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
+		return string(data)
+	}
+
+	newID := uuid.New().String()
+	os.MkdirAll("/etc/patchli", 0755)
+	os.WriteFile(idFile, []byte(newID), 0644)
+	return newID
 }
 
 func main() {
@@ -46,6 +62,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to detect package manager: %v", err)
 	}
+
+	nodeID := getOrGenerateIdentity()
+	log.Printf("Agent Identity (UUID): %s", nodeID)
 
 	// State Recovery on Boot
 	lastState, _ := updater.LoadState()
@@ -59,12 +78,15 @@ func main() {
 		serverURL = "localhost:8080"
 	}
 
+	// Try WebSocket first, fallback to HTTP long-polling
 	u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
 	log.Printf("Connecting to %s", u.String())
 
 	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
 	if err != nil {
-		log.Fatalf("Dial error: %v", err)
+		log.Printf("WebSocket dial error: %v. Falling back to HTTP Long-Polling...", err)
+		startHTTPPolling(serverURL, nodeID, pm)
+		return // Block forever in HTTP polling
 	}
 	defer conn.Close()
 
@@ -75,7 +97,7 @@ func main() {
 		for range ticker.C {
 			hostname, _ := os.Hostname()
 			payload := HeartbeatPayload{
-				MacAddress:   "00:11:22:33:44:55", // In real app, get from net.Interfaces
+				MacAddress:   nodeID,
 				Hostname:     hostname,
 				RebootNeeded: pm.RebootRequired(),
 			}
@@ -83,6 +105,7 @@ func main() {
 			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
 			if err := conn.WriteJSON(msg); err != nil {
 				log.Printf("Heartbeat error: %v", err)
+				// If WS dies, we could attempt to switch to HTTP polling here.
 				return
 			}
 		}
@@ -107,22 +130,119 @@ func main() {
 	}
 }
 
+func startHTTPPolling(serverHost, nodeID string, pm updater.PackageManager) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	client := &http.Client{Timeout: 60 * time.Second} // Long poll timeout
+
+	for {
+		// Send heartbeat
+		hostname, _ := os.Hostname()
+		hb := HeartbeatPayload{
+			MacAddress:   nodeID,
+			Hostname:     hostname,
+			RebootNeeded: pm.RebootRequired(),
+		}
+		data, _ := json.Marshal(hb)
+		
+		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
+		req.Header.Set("Content-Type", "application/json")
+		
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("HTTP Poll error: %v", err)
+			time.Sleep(10 * time.Second)
+			continue
+		}
+		
+		if resp.StatusCode == http.StatusOK {
+			var cmd CommandPayload
+			if err := json.NewDecoder(resp.Body).Decode(&cmd); err == nil && cmd.Action != "" {
+				go executeCommand(nil, pm, cmd)
+			}
+		}
+		resp.Body.Close()
+		<-ticker.C
+	}
+}
+
 func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd CommandPayload) {
 	ctx := context.Background()
 	var res updater.UpdateResult
 	var err error
+
+	// Pre-flight check for actual update actions
+	if cmd.Action == "apply_updates" {
+		if err := pm.PreFlightCheck(ctx); err != nil {
+			log.Printf("PreFlight Check Failed for Job %s: %v", cmd.ID, err)
+			// Send error result back
+			return
+		}
+
+		if cmd.PrePatchScript != "" {
+			log.Printf("Executing Pre-Patch Script...")
+			out, err := exec.CommandContext(ctx, "sh", "-c", cmd.PrePatchScript).CombinedOutput()
+			if err != nil {
+				log.Printf("Pre-Patch Script Failed: %v, Output: %s", err, string(out))
+				return
+			}
+		}
+		
+		// Save state before starting
+		updater.SaveState(updater.State{
+			JobID: cmd.ID,
+			Action: cmd.Action,
+			Status: "running",
+		})
+		defer updater.ClearState()
+	}
 
 	switch cmd.Action {
 	case "check_updates":
 		res, err = pm.CheckUpdates(ctx)
 	case "apply_updates":
 		res, err = pm.ApplyUpdates(ctx, cmd.Packages)
+	case "cleanup":
+		err = pm.Cleanup(ctx)
+		res = updater.UpdateResult{Success: err == nil, Error: err}
+	case "self_destruct":
+		err = updater.SelfDestruct()
+		res = updater.UpdateResult{Success: err == nil, Error: err}
+	case "update_agent":
+		// Download new binary to temp, swap, and restart (simplified)
+		log.Printf("Auto-updating agent...")
+		// Assuming standard path and systemd usage
+		out, err := exec.CommandContext(ctx, "sh", "-c", "curl -L http://localhost:8080/download/agent -o /tmp/agent && mv /tmp/agent /usr/local/bin/patchli-agent && chmod +x /usr/local/bin/patchli-agent && systemctl restart patchli-agent").CombinedOutput()
+		res = updater.UpdateResult{Success: err == nil, Output: string(out), Error: err}
 	default:
 		log.Printf("Unknown action: %s", cmd.Action)
 		return
 	}
 
+
+	if cmd.Action == "apply_updates" && err == nil {
+		if cmd.PostPatchScript != "" {
+			log.Printf("Executing Post-Patch Script...")
+			out, execErr := exec.CommandContext(ctx, "sh", "-c", cmd.PostPatchScript).CombinedOutput()
+			if execErr != nil {
+				log.Printf("Post-Patch Script Failed: %v, Output: %s", execErr, string(out))
+				err = execErr
+				res.Success = false
+			}
+		}
+
+		if err == nil && cmd.HealthCheckCommand != "" {
+			log.Printf("Executing Health Check Command...")
+			out, execErr := exec.CommandContext(ctx, "sh", "-c", cmd.HealthCheckCommand).CombinedOutput()
+			if execErr != nil {
+				log.Printf("Health Check Failed: %v, Output: %s", execErr, string(out))
+				err = execErr
+				res.Success = false
+			}
+		}
+	}
+
 	// Send results back (simplified)
-	log.Printf("Job %s finished. Success: %v", cmd.ID, res.Success)
+	log.Printf("Job %s finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
 	// conn.WriteJSON(...)
 }

@@ -55,3 +55,27 @@ func (m *AptManager) RebootRequired() bool {
 	_, err := os.Stat("/var/run/reboot-required")
 	return err == nil
 }
+
+func (m *AptManager) PreFlightCheck(ctx context.Context) error {
+	// 1. Check disk space (require 1GB)
+	if err := CheckDiskSpace(1024 * 1024 * 1024); err != nil {
+		return err
+	}
+
+	// 2. Process lock detection
+	if _, err := os.Stat("/var/lib/dpkg/lock-frontend"); err == nil {
+		// Could potentially be locked. Need to check if it's fcntl locked.
+		// For simplicity, checking if an apt/dpkg process is running.
+		cmd := exec.CommandContext(ctx, "pgrep", "apt|dpkg")
+		if err := cmd.Run(); err == nil {
+			return fmt.Errorf("package manager is currently locked or in use")
+		}
+	}
+	return nil
+}
+
+func (m *AptManager) Cleanup(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "apt-get", "autoremove", "-y")
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	return cmd.Run()
+}

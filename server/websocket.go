@@ -49,9 +49,12 @@ type HeartbeatPayload struct {
 }
 
 type CommandPayload struct {
-	ID      string   `json:"id"`
-	Action  string   `json:"action"` // e.g., "patch", "reboot"
-	Packages []string `json:"packages,omitempty"`
+	ID                 string   `json:"id"`
+	Action             string   `json:"action"` // e.g., "patch", "reboot"
+	Packages           []string `json:"packages,omitempty"`
+	PrePatchScript     string   `json:"pre_patch_script,omitempty"`
+	PostPatchScript    string   `json:"post_patch_script,omitempty"`
+	HealthCheckCommand string   `json:"health_check_command,omitempty"`
 }
 
 type LogPayload struct {

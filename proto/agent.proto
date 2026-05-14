@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package patchli;
+
+option go_package = "github.com/patchli/server/proto";
+
+service AgentService {
+  // Bi-directional stream for continuous communication (similar to WebSockets)
+  rpc Connect(stream AgentMessage) returns (stream ServerCommand) {}
+}
+
+message AgentMessage {
+  string mac_address = 1;
+  string hostname = 2;
+  bool reboot_needed = 3;
+  string log_output = 4;
+}
+
+message ServerCommand {
+  string job_id = 1;
+  string action = 2;
+  repeated string packages = 3;
+  string pre_patch_script = 4;
+  string post_patch_script = 5;
+}
