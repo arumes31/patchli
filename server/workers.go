@@ -28,16 +28,19 @@ type WorkerPool struct {
 	maxWorkers      int
 	groupSemaphores map[int]chan struct{}
 	pausedGroups    map[int]bool // Tracks if a group's patching is paused
+	pauseCond       *sync.Cond
 	mu              sync.Mutex
 }
 
 func NewWorkerPool(maxWorkers int) *WorkerPool {
-	return &WorkerPool{
+	wp := &WorkerPool{
 		jobQueue:        make(chan Job, 100),
 		maxWorkers:      maxWorkers,
 		groupSemaphores: make(map[int]chan struct{}),
 		pausedGroups:    make(map[int]bool),
 	}
+	wp.pauseCond = sync.NewCond(&wp.mu)
+	return wp
 }
 
 func (wp *WorkerPool) Start() {
@@ -60,6 +63,7 @@ func (wp *WorkerPool) PauseGroup(groupID int) {
 func (wp *WorkerPool) ResumeGroup(groupID int) {
 	wp.mu.Lock()
 	wp.pausedGroups[groupID] = false
+	wp.pauseCond.Broadcast()
 	wp.mu.Unlock()
 	log.Printf("Group %d resumed.", groupID)
 }
@@ -72,24 +76,26 @@ func (wp *WorkerPool) worker() {
 
 func (wp *WorkerPool) processJob(job Job) {
 	// 1. Check if group is paused (Feature 11)
-	for {
-		wp.mu.Lock()
-		paused := wp.pausedGroups[job.GroupID]
-		wp.mu.Unlock()
-		if !paused {
-			break
-		}
-		time.Sleep(5 * time.Second) // Wait and retry if paused
+	wp.mu.Lock()
+	for wp.pausedGroups[job.GroupID] {
+		wp.pauseCond.Wait()
 	}
+	wp.mu.Unlock()
 
 	// 2. Check Maintenance Window (Feature 5)
 	if job.MaintenanceWindow != nil {
 		now := time.Now()
-		if now.Before(job.MaintenanceWindow.StartTime) || now.After(job.MaintenanceWindow.EndTime) {
+		if now.After(job.MaintenanceWindow.EndTime) {
+			log.Printf("Job %s skipped/failed: Maintenance window ended.", job.ID)
+			return
+		}
+		if now.Before(job.MaintenanceWindow.StartTime) {
 			log.Printf("Job %s delayed: Outside maintenance window.", job.ID)
 			// Re-queue job for later
-			time.Sleep(10 * time.Second)
-			wp.Submit(job)
+			go func(j Job) {
+				time.Sleep(10 * time.Second)
+				wp.Submit(j)
+			}(job)
 			return
 		}
 	}

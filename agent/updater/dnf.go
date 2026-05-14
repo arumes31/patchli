@@ -49,7 +49,7 @@ func (m *DnfManager) RebootRequired() bool {
 }
 
 func (m *DnfManager) PreFlightCheck(ctx context.Context) error {
-	if err := CheckDiskSpace(1024 * 1024 * 1024); err != nil {
+	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
 

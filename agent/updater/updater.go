@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 )
 
 // UpdateResult represents the outcome of an update operation.
@@ -29,43 +28,43 @@ type PackageManager interface {
 	Cleanup(ctx context.Context) error
 }
 
-// CheckDiskSpace ensures there is at least minBytes available on the root partition.
-func CheckDiskSpace(minBytes uint64) error {
-	var stat syscall.Statfs_t
-	err := syscall.Statfs("/", &stat)
-	if err != nil {
-		return fmt.Errorf("failed to check disk space: %v", err)
-	}
-
-	// Available blocks * size per block
-	available := stat.Bavail * uint64(stat.Bsize)
-	if available < minBytes {
-		return fmt.Errorf("insufficient disk space: required %d bytes, available %d bytes", minBytes, available)
-	}
-	return nil
-}
-
 // SelfDestruct completely uninstalls the agent, removes its configuration, and stops the service.
 func SelfDestruct() error {
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("self destruct requires root privileges")
+	}
+
+	var errs []error
+
 	// 1. Remove systemd service if exists
 	if _, err := os.Stat("/etc/systemd/system/patchli-agent.service"); err == nil {
 		exec.Command("systemctl", "stop", "patchli-agent").Run()
 		exec.Command("systemctl", "disable", "patchli-agent").Run()
-		os.Remove("/etc/systemd/system/patchli-agent.service")
+		if err := os.Remove("/etc/systemd/system/patchli-agent.service"); err != nil {
+			errs = append(errs, err)
+		}
 		exec.Command("systemctl", "daemon-reload").Run()
 	}
 
 	// 2. Remove configuration and state
-	os.RemoveAll("/etc/patchli")
-	os.RemoveAll("/var/lib/patchli")
+	if err := os.RemoveAll("/etc/patchli"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := os.RemoveAll("/var/lib/patchli"); err != nil {
+		errs = append(errs, err)
+	}
 
-	// 3. Remove binary (this will fail if the binary is currently executing, so it should be the last step, or handled by an external script)
-	// A robust self-destruct might spawn a detached process to delete the binary.
-	go func() {
-		os.Remove("/usr/local/bin/patchli-agent")
-		os.Exit(0)
-	}()
+	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
+	script := `sleep 2; rm -f /usr/local/bin/patchli-agent`
+	cmd := exec.Command("sh", "-c", script)
+	detachProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		errs = append(errs, err)
+	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("self destruct completed with errors: %v", errs)
+	}
 	return nil
 }
 

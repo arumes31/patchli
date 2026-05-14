@@ -22,4 +22,5 @@ message ServerCommand {
   repeated string packages = 3;
   string pre_patch_script = 4;
   string post_patch_script = 5;
+  string health_check_command = 6;
 }

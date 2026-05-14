@@ -48,7 +48,7 @@ func (m *YumManager) RebootRequired() bool {
 }
 
 func (m *YumManager) PreFlightCheck(ctx context.Context) error {
-	if err := CheckDiskSpace(1024 * 1024 * 1024); err != nil {
+	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
 
@@ -60,5 +60,9 @@ func (m *YumManager) PreFlightCheck(ctx context.Context) error {
 }
 
 func (m *YumManager) Cleanup(ctx context.Context) error {
-	return exec.CommandContext(ctx, "yum", "autoremove", "-y").Run()
+	cmd := exec.CommandContext(ctx, "sh", "-c", "yum help | grep -q autoremove")
+	if err := cmd.Run(); err == nil {
+		return exec.CommandContext(ctx, "yum", "autoremove", "-y").Run()
+	}
+	return exec.CommandContext(ctx, "yum", "clean", "all").Run()
 }

@@ -1,11 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -46,12 +52,15 @@ type CommandPayload struct {
 func getOrGenerateIdentity() string {
 	idFile := "/etc/patchli/node_id"
 	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
-		return string(data)
+		return strings.TrimSpace(string(data))
 	}
 
 	newID := uuid.New().String()
-	os.MkdirAll("/etc/patchli", 0755)
-	os.WriteFile(idFile, []byte(newID), 0644)
+	if err := os.MkdirAll("/etc/patchli", 0755); err != nil {
+		log.Printf("Warning: failed to create /etc/patchli directory: %v", err)
+	} else if err := os.WriteFile(idFile, []byte(newID), 0644); err != nil {
+		log.Printf("Warning: failed to write node ID to %s: %v", idFile, err)
+	}
 	return newID
 }
 
@@ -209,11 +218,8 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 		err = updater.SelfDestruct()
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "update_agent":
-		// Download new binary to temp, swap, and restart (simplified)
 		log.Printf("Auto-updating agent...")
-		// Assuming standard path and systemd usage
-		out, err := exec.CommandContext(ctx, "sh", "-c", "curl -L http://localhost:8080/download/agent -o /tmp/agent && mv /tmp/agent /usr/local/bin/patchli-agent && chmod +x /usr/local/bin/patchli-agent && systemctl restart patchli-agent").CombinedOutput()
-		res = updater.UpdateResult{Success: err == nil, Output: string(out), Error: err}
+		res = performSecureAgentUpdate(ctx)
 	default:
 		log.Printf("Unknown action: %s", cmd.Action)
 		return
@@ -245,4 +251,48 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 	// Send results back (simplified)
 	log.Printf("Job %s finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
 	// conn.WriteJSON(...)
+}
+
+func performSecureAgentUpdate(ctx context.Context) updater.UpdateResult {
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/download/agent", nil)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+	
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during agent download", resp.StatusCode)}
+	}
+
+	tmpFile, err := os.CreateTemp("", "patchli-agent-*")
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+	tmpName := tmpFile.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		tmpFile.Close()
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+	tmpFile.Close()
+
+	// In a real app, verify signature/checksum of tmpName here
+
+	if err := os.Chmod(tmpName, 0755); err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+
+	if err := os.Rename(tmpName, "/usr/local/bin/patchli-agent"); err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+
+	out, err := exec.CommandContext(ctx, "systemctl", "restart", "patchli-agent").CombinedOutput()
+	return updater.UpdateResult{Success: err == nil, Output: string(out), Error: err}
 }

@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
+	"time"
 )
 
 type WebhookPayload struct {
@@ -41,7 +41,7 @@ func sendWebhook(url string, payload WebhookPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
@@ -59,13 +59,27 @@ func sendWebhook(url string, payload WebhookPayload) {
 func NotifySlack(url string, msg string) {
 	payload := map[string]string{"text": msg}
 	data, _ := json.Marshal(payload)
-	http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Slack webhook error: %v", err)
+		return
+	}
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 }
 
 func NotifyDiscord(url string, msg string) {
 	payload := map[string]string{"content": msg}
 	data, _ := json.Marshal(payload)
-	http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Discord webhook error: %v", err)
+		return
+	}
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 }
 
 func NotifyTeams(url string, title, text string) {
@@ -77,5 +91,12 @@ func NotifyTeams(url string, title, text string) {
 		"text":       text,
 	}
 	data, _ := json.Marshal(payload)
-	http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Teams webhook error: %v", err)
+		return
+	}
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 }

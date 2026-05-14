@@ -3,6 +3,7 @@ package updater
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 )
 
@@ -55,11 +56,11 @@ func (m *ApkManager) RebootRequired() bool {
 
 func (m *ApkManager) PreFlightCheck(ctx context.Context) error {
 	// Check disk space (require 500MB for Alpine)
-	if err := CheckDiskSpace(500 * 1024 * 1024); err != nil {
+	if err := CheckDiskSpace("/var/lib/patchli", 500*1024*1024); err != nil {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "pgrep", "apk")
+	cmd := exec.CommandContext(ctx, "pgrep", "-x", "apk")
 	if err := cmd.Run(); err == nil {
 		return fmt.Errorf("apk package manager is currently locked or in use")
 	}

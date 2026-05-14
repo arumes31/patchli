@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 // WindowsManager implements the PackageManager interface using PowerShell and Windows Update Agent API.
@@ -31,10 +32,17 @@ $SearchResult.Updates.Count
 }
 
 func (m *WindowsManager) ApplyUpdates(ctx context.Context, packages []string) (UpdateResult, error) {
-	// This requires an elevated script to install updates.
-	// For simplicity, we mock this here or use a PowerShell module like PSWindowsUpdate.
 	script := `
-Install-WindowsUpdate -AcceptAll -IgnoreReboot
+if (!(Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+	Install-Module -Name PSWindowsUpdate -Force -SkipPublisherCheck -AcceptLicense
+}
+Import-Module PSWindowsUpdate
+$pkgNames = @("` + strings.Join(packages, `", "`) + `")
+if ($pkgNames.Length -gt 0 -and $pkgNames[0] -ne "") {
+	Install-WindowsUpdate -Title $pkgNames -AcceptAll -IgnoreReboot
+} else {
+	Install-WindowsUpdate -AcceptAll -IgnoreReboot
+}
 `
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.CombinedOutput()
@@ -66,11 +74,14 @@ if ($disk.FreeSpace -lt 5368709120) { exit 1 }
 }
 
 func (m *WindowsManager) Cleanup(ctx context.Context) error {
-	// Clean up Windows Update cache
 	script := `
-Stop-Service wuauserv -Force
-Remove-Item -Recurse -Force "C:\Windows\SoftwareDistribution\Download\*"
-Start-Service wuauserv
+$ErrorActionPreference = 'Stop'
+try {
+	Stop-Service wuauserv -Force
+	Remove-Item -Recurse -Force "C:\Windows\SoftwareDistribution\Download\*"
+} finally {
+	Start-Service wuauserv
+}
 `
 	return exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Run()
 }

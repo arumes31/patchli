@@ -3,6 +3,7 @@ package updater
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 )
@@ -58,15 +59,13 @@ func (m *AptManager) RebootRequired() bool {
 
 func (m *AptManager) PreFlightCheck(ctx context.Context) error {
 	// 1. Check disk space (require 1GB)
-	if err := CheckDiskSpace(1024 * 1024 * 1024); err != nil {
+	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
 
 	// 2. Process lock detection
 	if _, err := os.Stat("/var/lib/dpkg/lock-frontend"); err == nil {
-		// Could potentially be locked. Need to check if it's fcntl locked.
-		// For simplicity, checking if an apt/dpkg process is running.
-		cmd := exec.CommandContext(ctx, "pgrep", "apt|dpkg")
+		cmd := exec.CommandContext(ctx, "pgrep", "-f", "apt|dpkg")
 		if err := cmd.Run(); err == nil {
 			return fmt.Errorf("package manager is currently locked or in use")
 		}
