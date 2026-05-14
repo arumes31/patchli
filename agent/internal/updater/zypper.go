@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 )
 
 // ZypperManager implements the PackageManager interface for zypper (SUSE).
 type ZypperManager struct{}
 
 func (m *ZypperManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	cmd := execCommandContext(ctx, "zypper", "--non-interactive", "refresh")
+	cmd := exec.CommandContext(ctx, "zypper", "--non-interactive", "refresh")
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -21,7 +22,7 @@ func (m *ZypperManager) CheckUpdates(ctx context.Context) (UpdateResult, error) 
 		return UpdateResult{Success: false, Output: out.String(), Error: err}, err
 	}
 
-	cmd = execCommandContext(ctx, "zypper", "--non-interactive", "list-updates")
+	cmd = exec.CommandContext(ctx, "zypper", "--non-interactive", "list-updates")
 	out.Reset()
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -39,7 +40,7 @@ func (m *ZypperManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 		args = append([]string{"--non-interactive", "install"}, packages...)
 	}
 
-	cmd := execCommandContext(ctx, "zypper", args...)
+	cmd := exec.CommandContext(ctx, "zypper", args...)
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -50,7 +51,7 @@ func (m *ZypperManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 }
 
 func (m *ZypperManager) RebootRequired() bool {
-	cmd := execCommand("zypper", "needs-rebooting")
+	cmd := exec.Command("zypper", "needs-rebooting")
 	err := cmd.Run()
 	return err != nil && cmd.ProcessState.ExitCode() == 102
 }
@@ -60,7 +61,7 @@ func (m *ZypperManager) PreFlightCheck(ctx context.Context) error {
 		return err
 	}
 
-	cmd := execCommandContext(ctx, "pgrep", "zypper")
+	cmd := exec.CommandContext(ctx, "pgrep", "-x", "zypper")
 	if err := cmd.Run(); err == nil {
 		return fmt.Errorf("zypper is currently locked or in use")
 	}
@@ -68,5 +69,5 @@ func (m *ZypperManager) PreFlightCheck(ctx context.Context) error {
 }
 
 func (m *ZypperManager) Cleanup(ctx context.Context) error {
-	return execCommandContext(ctx, "zypper", "clean").Run()
+	return exec.CommandContext(ctx, "zypper", "clean").Run()
 }

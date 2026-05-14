@@ -5,7 +5,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -o patchli-server ./main.go
+RUN go build -o patchli-server ./cmd/patchli-server/main.go
 
 FROM alpine:latest
 WORKDIR /app

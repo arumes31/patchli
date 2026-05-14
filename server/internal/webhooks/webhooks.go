@@ -1,10 +1,11 @@
-package main
+package webhooks
 
 import (
 	"bytes"
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 )
@@ -16,7 +17,6 @@ type WebhookPayload struct {
 	NodeMac string `json:"node_mac,omitempty"`
 }
 
-// NotifyWebhooks sends an outward webhook to configured URLs.
 var NotifyWebhooks = func(payload WebhookPayload) {
 	urls := []string{
 		os.Getenv("SLACK_WEBHOOK_URL"),
@@ -28,13 +28,22 @@ var NotifyWebhooks = func(payload WebhookPayload) {
 		if u == "" {
 			continue
 		}
+		if !isValidURL(u) {
+			log.Printf("Invalid webhook URL: %s", u)
+			continue
+		}
 		go sendWebhook(u, payload)
 	}
 }
 
-func sendWebhook(url string, payload WebhookPayload) {
-	data, _ := json.Marshal(payload)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+func sendWebhook(targetURL string, payload WebhookPayload) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Failed to marshal webhook payload: %v", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
@@ -54,12 +63,11 @@ func sendWebhook(url string, payload WebhookPayload) {
 	}
 }
 
-// Specific formatters for different platforms (Optional, as many accept standard JSON)
-
-func NotifySlack(url string, msg string) {
+func NotifySlack(webhookURL string, msg string) {
+	if !isValidURL(webhookURL) { return }
 	payload := map[string]string{"text": msg}
 	data, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Slack webhook error: %v", err)
 		return
@@ -69,10 +77,11 @@ func NotifySlack(url string, msg string) {
 	}
 }
 
-func NotifyDiscord(url string, msg string) {
+func NotifyDiscord(webhookURL string, msg string) {
+	if !isValidURL(webhookURL) { return }
 	payload := map[string]string{"content": msg}
 	data, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Discord webhook error: %v", err)
 		return
@@ -82,7 +91,8 @@ func NotifyDiscord(url string, msg string) {
 	}
 }
 
-func NotifyTeams(url string, title, text string) {
+func NotifyTeams(webhookURL string, title, text string) {
+	if !isValidURL(webhookURL) { return }
 	payload := map[string]string{
 		"@type":      "MessageCard",
 		"@context":   "http://schema.org/extensions",
@@ -91,7 +101,7 @@ func NotifyTeams(url string, title, text string) {
 		"text":       text,
 	}
 	data, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Teams webhook error: %v", err)
 		return
@@ -99,4 +109,9 @@ func NotifyTeams(url string, title, text string) {
 	if resp != nil {
 		defer resp.Body.Close()
 	}
+}
+
+func isValidURL(u string) bool {
+	p, err := url.Parse(u)
+	return err == nil && (p.Scheme == "http" || p.Scheme == "https")
 }

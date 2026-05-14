@@ -69,7 +69,32 @@ func runMigrations(dbURL string) error {
 	return nil
 }
 
-// GetDB returns the global database handle.
-func GetDB() *sql.DB {
-	return DB
+// UpdateNodeStatus updates the node's heartbeat and status in the database.
+func UpdateNodeStatus(mac string, hostname string, osName string, osVersion string, kernel string, status string) error {
+	query := `
+		INSERT INTO nodes (mac_address, hostname, os_name, os_version, kernel_version, status, last_heartbeat)
+		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+		ON CONFLICT (mac_address) DO UPDATE SET
+			hostname = EXCLUDED.hostname,
+			os_name = EXCLUDED.os_name,
+			os_version = EXCLUDED.os_version,
+			kernel_version = EXCLUDED.kernel_version,
+			status = EXCLUDED.status,
+			last_heartbeat = CURRENT_TIMESTAMP
+	`
+	_, err := DB.Exec(query, mac, hostname, osName, osVersion, kernel, status)
+	return err
+}
+
+// IsJobRunning checks if a job is still in 'running' state.
+func IsJobRunning(jobID string) (bool, error) {
+	var status string
+	err := DB.QueryRow("SELECT status FROM audit_logs WHERE job_id = $1", jobID).Scan(&status)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return status == "running", nil
 }

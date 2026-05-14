@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 )
 
 // PacmanManager implements the PackageManager interface for pacman (Arch Linux).
 type PacmanManager struct{}
 
 func (m *PacmanManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	cmd := execCommandContext(ctx, "pacman", "-Sy")
+	cmd := exec.CommandContext(ctx, "pacman", "-Sy")
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -21,7 +22,7 @@ func (m *PacmanManager) CheckUpdates(ctx context.Context) (UpdateResult, error) 
 		return UpdateResult{Success: false, Output: out.String(), Error: err}, err
 	}
 
-	cmd = execCommandContext(ctx, "pacman", "-Qu")
+	cmd = exec.CommandContext(ctx, "pacman", "-Qu")
 	out.Reset()
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -39,7 +40,7 @@ func (m *PacmanManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 		args = append([]string{"-S", "--noconfirm"}, packages...)
 	}
 
-	cmd := execCommandContext(ctx, "pacman", args...)
+	cmd := exec.CommandContext(ctx, "pacman", args...)
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -51,9 +52,6 @@ func (m *PacmanManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 
 func (m *PacmanManager) RebootRequired() bool {
 	// Arch Linux usually requires reboot if kernel or systemd is updated.
-	// We can check if /boot/vmlinuz-linux is newer than current running kernel,
-	// but a simpler check is looking for a reboot-required flag if managed by external tools.
-	// For raw pacman, there is no built-in reboot-required file.
 	return false
 }
 
@@ -62,7 +60,7 @@ func (m *PacmanManager) PreFlightCheck(ctx context.Context) error {
 		return err
 	}
 
-	cmd := execCommandContext(ctx, "pgrep", "pacman")
+	cmd := exec.CommandContext(ctx, "pgrep", "-x", "pacman")
 	if err := cmd.Run(); err == nil {
 		return fmt.Errorf("pacman is currently locked or in use")
 	}
@@ -70,5 +68,5 @@ func (m *PacmanManager) PreFlightCheck(ctx context.Context) error {
 }
 
 func (m *PacmanManager) Cleanup(ctx context.Context) error {
-	return execCommandContext(ctx, "pacman", "-Sc", "--noconfirm").Run()
+	return exec.CommandContext(ctx, "pacman", "-Sc", "--noconfirm").Run()
 }

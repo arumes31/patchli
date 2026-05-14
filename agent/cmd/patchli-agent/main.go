@@ -6,24 +6,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/coreos/go-systemd/v22/daemon"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/patchli/agent/updater"
+	"github.com/patchli/agent/internal/identity"
+	"github.com/patchli/agent/internal/state"
+	"github.com/patchli/agent/internal/updater"
 )
-
-var idFile = "/etc/patchli/node_id"
-var execCommandContext = exec.CommandContext
-var performSecureAgentUpdateFunc = performSecureAgentUpdate
 
 // Message types matching server
 const (
@@ -39,7 +34,7 @@ type WSMessage struct {
 }
 
 type HeartbeatPayload struct {
-	MacAddress    string `json:"mac_address"` // Keeping field name for backwards compatibility, but it will hold UUID
+	MacAddress    string `json:"mac_address"`
 	Hostname      string `json:"hostname"`
 	OS            string `json:"os"`
 	Kernel        string `json:"kernel"`
@@ -55,28 +50,11 @@ type CommandPayload struct {
 	HealthCheckCommand string   `json:"health_check_command,omitempty"`
 }
 
-
-
-
-func getOrGenerateIdentity() string {
-	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
-		return strings.TrimSpace(string(data))
-	}
-
-	newID := uuid.New().String()
-	if err := os.MkdirAll("/etc/patchli", 0755); err != nil {
-		log.Printf("Warning: failed to create /etc/patchli directory: %v", err)
-	} else if err := os.WriteFile(idFile, []byte(newID), 0644); err != nil {
-		log.Printf("Warning: failed to write node ID to %s: %v", idFile, err)
-	}
-	return newID
-}
-
 func performSelfDiagnosis() {
 	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
 	
 	fmt.Print("1. Identity check: ")
-	nodeID := getOrGenerateIdentity()
+	nodeID := identity.GetOrGenerate()
 	fmt.Printf("UUID=%s [OK]\n", nodeID)
 
 	fmt.Print("2. Package Manager check: ")
@@ -102,7 +80,7 @@ func performSelfDiagnosis() {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
 		fmt.Printf("Server Health=%d [OK]\n", resp.StatusCode)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	
 	fmt.Println("Self-diagnosis complete.")
@@ -117,7 +95,7 @@ func main() {
 		return
 	}
 
-	daemon.SdNotify(false, daemon.SdNotifyReady)
+	_, _ = daemon.SdNotify(false, daemon.SdNotifyReady)
 	RunAgent(context.Background())
 }
 
@@ -129,13 +107,14 @@ func RunAgent(ctx context.Context) {
 		log.Fatalf("Failed to detect package manager: %v", err)
 	}
 
-	nodeID := getOrGenerateIdentity()
+	nodeID := identity.GetOrGenerate()
 	log.Printf("Agent Identity (UUID): %s", nodeID)
 
 	// State Recovery on Boot
-	lastState, _ := updater.LoadState()
+	lastState, _ := state.LoadState()
 	if lastState != nil && lastState.Status == "running" {
 		log.Printf("RECOVERY: Detected interrupted job %s. Reporting to server...", lastState.JobID)
+		// In a real app, send a recovery notification via WS/Polling
 	}
 
 	serverURL := os.Getenv("SERVER_URL")
@@ -143,7 +122,6 @@ func RunAgent(ctx context.Context) {
 		serverURL = "localhost:8080"
 	}
 
-	// Try WebSocket first, fallback to HTTP long-polling
 	u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
 	log.Printf("Connecting to %s", u.String())
 
@@ -155,10 +133,8 @@ func RunAgent(ctx context.Context) {
 	}
 	defer conn.Close()
 
-	// Heartbeat loop
 	go runHeartbeat(ctx, conn, nodeID, pm)
 
-	// Command listener loop
 	for {
 		select {
 		case <-ctx.Done():
@@ -173,9 +149,11 @@ func RunAgent(ctx context.Context) {
 
 			if wsMsg.Type == MsgTypeCommand {
 				var cmd CommandPayload
-				json.Unmarshal(wsMsg.Payload, &cmd)
+				if err := json.Unmarshal(wsMsg.Payload, &cmd); err != nil {
+					log.Printf("Command unmarshal error: %v", err)
+					continue
+				}
 				log.Printf("Received command: %s (Job: %s)", cmd.Action, cmd.ID)
-
 				go executeCommand(conn, pm, cmd)
 			}
 		}
@@ -194,8 +172,7 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 			rebootNeeded := pm.RebootRequired()
 			
 			if rebootNeeded {
-				// Feature 20: Reboot Nag
-				exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
+				_ = exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
 			}
 
 			payload := HeartbeatPayload{
@@ -203,7 +180,8 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 				Hostname:     hostname,
 				RebootNeeded: rebootNeeded,
 			}
-			data, _ := json.Marshal(payload)
+			data, err := json.Marshal(payload)
+			if err != nil { continue }
 			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
 			if err := conn.WriteJSON(msg); err != nil {
 				log.Printf("Heartbeat error: %v", err)
@@ -216,10 +194,9 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater.PackageManager) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	client := &http.Client{Timeout: 60 * time.Second} // Long poll timeout
+	client := &http.Client{Timeout: 60 * time.Second}
 
 	for {
-		// Send heartbeat
 		hostname, _ := os.Hostname()
 		hb := HeartbeatPayload{
 			MacAddress:   nodeID,
@@ -248,7 +225,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 				go executeCommand(nil, pm, cmd)
 			}
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		select {
 		case <-ctx.Done():
 			return
@@ -262,30 +239,31 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 	var res updater.UpdateResult
 	var err error
 
-	// Pre-flight check for actual update actions
 	if cmd.Action == "apply_updates" {
 		if err := pm.PreFlightCheck(ctx); err != nil {
 			log.Printf("PreFlight Check Failed for Job %s: %v", cmd.ID, err)
-			// Send error result back
 			return
 		}
 
 		if cmd.PrePatchScript != "" {
 			log.Printf("Executing Pre-Patch Script...")
-			out, err := execCommandContext(ctx, "sh", "-c", cmd.PrePatchScript).CombinedOutput()
+			out, err := exec.CommandContext(ctx, "sh", "-c", cmd.PrePatchScript).CombinedOutput()
 			if err != nil {
 				log.Printf("Pre-Patch Script Failed: %v, Output: %s", err, string(out))
 				return
 			}
 		}
 		
-		// Save state before starting
-		updater.SaveState(updater.State{
+		if err := state.SaveState(state.State{
 			JobID: cmd.ID,
 			Action: cmd.Action,
 			Status: "running",
-		})
-		defer updater.ClearState()
+		}); err != nil {
+			log.Printf("Failed to save state: %v", err)
+		}
+		defer func() {
+			_ = state.ClearState()
+		}()
 	}
 
 	switch cmd.Action {
@@ -310,11 +288,10 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 		return
 	}
 
-
 	if cmd.Action == "apply_updates" && err == nil {
 		if cmd.PostPatchScript != "" {
 			log.Printf("Executing Post-Patch Script...")
-			out, execErr := execCommandContext(ctx, "sh", "-c", cmd.PostPatchScript).CombinedOutput()
+			out, execErr := exec.CommandContext(ctx, "sh", "-c", cmd.PostPatchScript).CombinedOutput()
 			if execErr != nil {
 				log.Printf("Post-Patch Script Failed: %v, Output: %s", execErr, string(out))
 				err = execErr
@@ -324,7 +301,7 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 
 		if err == nil && cmd.HealthCheckCommand != "" {
 			log.Printf("Executing Health Check Command...")
-			out, execErr := execCommandContext(ctx, "sh", "-c", cmd.HealthCheckCommand).CombinedOutput()
+			out, execErr := exec.CommandContext(ctx, "sh", "-c", cmd.HealthCheckCommand).CombinedOutput()
 			if execErr != nil {
 				log.Printf("Health Check Failed: %v, Output: %s", execErr, string(out))
 				err = execErr
@@ -333,15 +310,11 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 		}
 	}
 
-	// Send results back (simplified)
 	log.Printf("Job %s finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
-	// conn.WriteJSON(...)
 }
 
-var agentDownloadURL = "http://localhost:8080/download/agent"
-
 func performSecureAgentUpdate(ctx context.Context) updater.UpdateResult {
-	req, err := http.NewRequestWithContext(ctx, "GET", agentDownloadURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/download/agent", nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
@@ -362,15 +335,17 @@ func performSecureAgentUpdate(ctx context.Context) updater.UpdateResult {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 	tmpName := tmpFile.Name()
-	defer os.Remove(tmpName)
+	defer func() {
+		_ = os.Remove(tmpName)
+	}()
 
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return updater.UpdateResult{Success: false, Error: err}
 	}
-	tmpFile.Close()
-
-	// In a real app, verify signature/checksum of tmpName here
+	if err := tmpFile.Close(); err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
 
 	if err := os.Chmod(tmpName, 0755); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
@@ -380,6 +355,6 @@ func performSecureAgentUpdate(ctx context.Context) updater.UpdateResult {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
-	out, err := execCommandContext(ctx, "systemctl", "restart", "patchli-agent").CombinedOutput()
+	out, err := exec.CommandContext(ctx, "systemctl", "restart", "patchli-agent").CombinedOutput()
 	return updater.UpdateResult{Success: err == nil, Output: string(out), Error: err}
 }

@@ -119,7 +119,7 @@ jobs:
           sudo mv pumba /usr/local/bin/
 
       - name: Build Server
-        run: go build -o server_bin ./main.go
+        run: go build -o server_bin ./cmd/patchli-server/main.go
         working-directory: server
 
       - name: Run Server in Background

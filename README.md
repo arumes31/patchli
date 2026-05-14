@@ -120,10 +120,10 @@ Navigate to `http://localhost:8080/` and log in.
 ### Local Setup
 ```bash
 # Run server
-cd server && go run .
+cd server && go run ./cmd/patchli-server/main.go
 
 # Run agent
-cd agent && go run .
+cd agent && go run ./cmd/patchli-agent/main.go
 ```
 
 ### Testing & Quality

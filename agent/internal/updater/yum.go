@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os/exec"
 )
 
 // YumManager implements the PackageManager interface for yum (Older RHEL/CentOS).
 type YumManager struct{}
 
 func (m *YumManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	cmd := execCommandContext(ctx, "yum", "check-update", "-y")
+	cmd := exec.CommandContext(ctx, "yum", "check-update", "-y")
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -30,7 +31,7 @@ func (m *YumManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 		args = append([]string{"install", "-y"}, packages...)
 	}
 
-	cmd := execCommandContext(ctx, "yum", args...)
+	cmd := exec.CommandContext(ctx, "yum", args...)
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -41,7 +42,7 @@ func (m *YumManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func (m *YumManager) RebootRequired() bool {
-	cmd := execCommand("needs-restarting", "-r")
+	cmd := exec.Command("needs-restarting", "-r")
 	err := cmd.Run()
 	return err != nil && cmd.ProcessState.ExitCode() == 1
 }
@@ -51,7 +52,7 @@ func (m *YumManager) PreFlightCheck(ctx context.Context) error {
 		return err
 	}
 
-	cmd := execCommandContext(ctx, "pgrep", "yum")
+	cmd := exec.CommandContext(ctx, "pgrep", "-x", "yum")
 	if err := cmd.Run(); err == nil {
 		return fmt.Errorf("yum is currently locked or in use")
 	}
@@ -59,9 +60,9 @@ func (m *YumManager) PreFlightCheck(ctx context.Context) error {
 }
 
 func (m *YumManager) Cleanup(ctx context.Context) error {
-	cmd := execCommandContext(ctx, "sh", "-c", "yum help | grep -q autoremove")
+	cmd := exec.CommandContext(ctx, "sh", "-c", "yum help | grep -q autoremove")
 	if err := cmd.Run(); err == nil {
-		return execCommandContext(ctx, "yum", "autoremove", "-y").Run()
+		return exec.CommandContext(ctx, "yum", "autoremove", "-y").Run()
 	}
-	return execCommandContext(ctx, "yum", "clean", "all").Run()
+	return exec.CommandContext(ctx, "yum", "clean", "all").Run()
 }

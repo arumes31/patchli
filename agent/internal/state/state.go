@@ -1,4 +1,4 @@
-package updater
+package state
 
 import (
 	"encoding/json"
@@ -20,7 +20,7 @@ var stateFile = "/var/lib/patchli/state.json"
 // SaveState persists the current job state to disk.
 func SaveState(state State) error {
 	dir := filepath.Dir(stateFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return err
 	}
 
@@ -29,7 +29,7 @@ func SaveState(state State) error {
 		return err
 	}
 
-	return os.WriteFile(stateFile, data, 0644)
+	return os.WriteFile(stateFile, data, 0600)
 }
 
 // LoadState reads the last known job state from disk.

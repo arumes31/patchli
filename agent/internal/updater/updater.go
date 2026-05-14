@@ -7,14 +7,6 @@ import (
 	"os/exec"
 )
 
-var statFunc = os.Stat
-var execCommand = exec.Command
-var execCommandContext = exec.CommandContext
-var detachProcessFunc = detachProcess
-var geteuidFunc = os.Geteuid
-var removeFunc = os.Remove
-var removeAllFunc = os.RemoveAll
-
 // UpdateResult represents the outcome of an update operation.
 type UpdateResult struct {
 	Success bool
@@ -38,34 +30,34 @@ type PackageManager interface {
 
 // SelfDestruct completely uninstalls the agent, removes its configuration, and stops the service.
 func SelfDestruct() error {
-	if geteuidFunc() != 0 {
+	if os.Geteuid() != 0 {
 		return fmt.Errorf("self destruct requires root privileges")
 	}
 
 	var errs []error
 
 	// 1. Remove systemd service if exists
-	if _, err := statFunc("/etc/systemd/system/patchli-agent.service"); err == nil {
-		execCommand("systemctl", "stop", "patchli-agent").Run()
-		execCommand("systemctl", "disable", "patchli-agent").Run()
-		if err := removeFunc("/etc/systemd/system/patchli-agent.service"); err != nil {
+	if _, err := os.Stat("/etc/systemd/system/patchli-agent.service"); err == nil {
+		_ = exec.Command("systemctl", "stop", "patchli-agent").Run()
+		_ = exec.Command("systemctl", "disable", "patchli-agent").Run()
+		if err := os.Remove("/etc/systemd/system/patchli-agent.service"); err != nil {
 			errs = append(errs, err)
 		}
-		execCommand("systemctl", "daemon-reload").Run()
+		_ = exec.Command("systemctl", "daemon-reload").Run()
 	}
 
 	// 2. Remove configuration and state
-	if err := removeAllFunc("/etc/patchli"); err != nil {
+	if err := os.RemoveAll("/etc/patchli"); err != nil {
 		errs = append(errs, err)
 	}
-	if err := removeAllFunc("/var/lib/patchli"); err != nil {
+	if err := os.RemoveAll("/var/lib/patchli"); err != nil {
 		errs = append(errs, err)
 	}
 
 	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
 	script := `sleep 2; rm -f /usr/local/bin/patchli-agent`
-	cmd := execCommand("sh", "-c", script)
-	detachProcessFunc(cmd)
+	cmd := exec.Command("sh", "-c", script)
+	detachProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		errs = append(errs, err)
 	}
@@ -79,32 +71,32 @@ func SelfDestruct() error {
 // DetectPackageManager determines the underlying OS package manager.
 func DetectPackageManager() (PackageManager, error) {
 	// Check for apk (Alpine)
-	if _, err := statFunc("/sbin/apk"); err == nil {
+	if _, err := os.Stat("/sbin/apk"); err == nil {
 		return &ApkManager{}, nil
 	}
 	
 	// Check for apt (Debian/Ubuntu)
-	if _, err := statFunc("/usr/bin/apt-get"); err == nil {
+	if _, err := os.Stat("/usr/bin/apt-get"); err == nil {
 		return &AptManager{}, nil
 	}
 
 	// Check for dnf (RHEL/CentOS/Rocky/Alma 8+)
-	if _, err := statFunc("/usr/bin/dnf"); err == nil {
+	if _, err := os.Stat("/usr/bin/dnf"); err == nil {
 		return &DnfManager{}, nil
 	}
 
 	// Check for yum (Older RHEL/CentOS)
-	if _, err := statFunc("/usr/bin/yum"); err == nil {
+	if _, err := os.Stat("/usr/bin/yum"); err == nil {
 		return &YumManager{}, nil
 	}
 
 	// Check for pacman (Arch Linux)
-	if _, err := statFunc("/usr/bin/pacman"); err == nil {
+	if _, err := os.Stat("/usr/bin/pacman"); err == nil {
 		return &PacmanManager{}, nil
 	}
 
 	// Check for zypper (SUSE)
-	if _, err := statFunc("/usr/bin/zypper"); err == nil {
+	if _, err := os.Stat("/usr/bin/zypper"); err == nil {
 		return &ZypperManager{}, nil
 	}
 
