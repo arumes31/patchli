@@ -1,23 +1,143 @@
-# Patchli - Distributed Linux Patch Management & Fleet Monitoring System
+# <img src="temp/logo_14.png" width="48" height="48" valign="middle"> Patchli
 
-Patchli is a high-performance, distributed Patch Management system designed to seamlessly orchestrate updates across massive fleets of Linux (and Windows) nodes.
+### Distributed Linux Patch Management & Fleet Monitoring System
 
-## Architecture
+Patchli is a high-performance, distributed Patch Management system designed to seamlessly orchestrate updates across massive fleets of Linux and Windows nodes. It provides a centralized Control Plane for monitoring, scheduling, and executing updates with a focus on reliability, security, and real-time observability.
 
-*   **Control Plane:** Go 1.26, PostgreSQL 15 (with `golang-migrate`), Redis 7. Features WebSockets and gRPC for real-time communication, and a Worker Pool for job orchestration.
-*   **Intelligent Agent:** Go 1.26. A lightweight, self-updating, self-healing agent that supports native package managers.
+---
 
-## Advanced Features Implemented
+## 🏗️ Architecture
 
-*   **OS Support:** Debian/Ubuntu (APT), Alpine (APK), RHEL/CentOS/Rocky (DNF/YUM), Arch Linux (Pacman), SUSE (Zypper), and Windows Server (WUA).
-*   **Resilience:** Self-healing watchdog, HTTP long-polling fallback, persistent UUID identity, state recovery after reboots.
-*   **Orchestration:** Maintenance Windows, Pre/Post-Patch Scripts, Health Checks, Job Pausing/Resuming.
-*   **Security:** HMAC-based zero-touch registration, JWT persistent authentication, Disk Space & Process Lock pre-checks.
-*   **Database:** Versioned migrations using `golang-migrate` and embedded SQL files.
-*   **CI/CD:** Automated testing, Code Coverage enforcement (80%), Chaos Engineering tests (Pumba), `gosec` SAST, and `govulncheck`.
+Patchli follows a robust client-server architecture. The **Control Plane** manages the fleet state and orchestrates jobs, while lightweight **Agents** execute tasks locally on each node.
 
-## Getting Started
+```mermaid
+graph TD
+    subgraph "Control Plane (Server)"
+        API[API Gateway / HTTP Server]
+        WP[Worker Pool]
+        DB[(PostgreSQL)]
+        Cache[(Redis)]
+        WS[WebSocket Manager]
+    end
 
-1.  Start the Control Plane: `docker-compose up -d`
-2.  Navigate to the dashboard at `http://localhost:8080/`
-3.  Click **Add Agent** to generate a secure installation script.
+    subgraph "Managed Fleet (Agents)"
+        Agent1[Patchli Agent 1]
+        Agent2[Patchli Agent 2]
+        AgentN[Patchli Agent N]
+    end
+
+    Agent1 <--> WS
+    Agent2 <--> WS
+    AgentN <--> WS
+    
+    API <--> DB
+    API <--> Cache
+    WP <--> DB
+    WP <--> Cache
+    WS <--> WP
+```
+
+---
+
+## 🔐 Zero-Touch Registration
+
+Agents register themselves securely using an HMAC-signed setup script. Once registered, they receive a persistent JWT for all future communications.
+
+```mermaid
+sequenceDiagram
+    participant A as Patchli Agent
+    participant S as Control Plane
+    participant DB as Database
+
+    A->>S: POST /api/v1/setup (HMAC Signature + UUID)
+    Note over S: Validate HMAC (REGISTRATION_SECRET)
+    S->>DB: Store Node Identity
+    S-->>A: HTTP 201 + JWT Agent Token
+    A->>S: WebSocket Connection (JWT Auth)
+    S-->>A: Connected (Real-time Link)
+```
+
+---
+
+## ✨ Key Features
+
+- **🚀 Performance**: Go-based architecture with gRPC-ready design and non-blocking worker pools.
+- **🛡️ Resilience**: Self-healing watchdog, HTTP long-polling fallback, and state recovery after reboots.
+- **📦 Multi-OS Support**: Native support for **APT** (Debian/Ubuntu), **APK** (Alpine), **DNF/YUM** (RHEL/Rocky), **Pacman** (Arch), **Zypper** (SUSE), and **WUA** (Windows).
+- **🔒 Security**: HMAC-based zero-touch registration, JWT persistent authentication, and pre-patch lock checks.
+- **🛠️ Orchestration**: Maintenance windows, pre/post-patch scripts, and remote health checks.
+- **📈 Observability**: Real-time log streaming via WebSockets and detailed fleet metrics.
+
+---
+
+## ⚙️ Configuration Reference
+
+### Control Plane (Server)
+
+| Variable | Description | Default | Required |
+| :--- | :--- | :--- | :--- |
+| `DB_URL` | PostgreSQL connection string (`postgres://...`) | - | **Yes** |
+| `REDIS_URL` | Redis connection string (`redis:6379`) | - | **Yes** |
+| `PORT` | Listening port for the API and Dashboard | `8080` | No |
+| `JWT_SECRET` | Secret key for signing Agent authentication tokens | - | **Yes** |
+| `REGISTRATION_SECRET` | Secret key for generating HMAC setup signatures | - | **Yes** |
+| `BASE_URL` | External URL of the server (e.g., `https://patch.example.com`) | `http://localhost:8080` | No |
+
+### Intelligent Agent
+
+| Flag | Description |
+| :--- | :--- |
+| `--verify` | Performs self-diagnosis (identity, PM detection, network) and exits. |
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `SERVER_URL` | Host and port of the Patchli Control Plane | `localhost:8080` |
+
+---
+
+## 🚀 Getting Started
+
+### 1. Deploy the Control Plane
+The easiest way to start is using Docker Compose:
+
+```bash
+docker-compose up -d
+```
+
+### 2. Access the Dashboard
+Navigate to `http://localhost:8080/` and log in.
+
+### 3. Add Your First Agent
+1. Go to the **Add Agent** section.
+2. Select your OS (Linux, Alpine, or Windows).
+3. Copy the generated one-liner and run it on your target node.
+4. The node will appear in the dashboard automatically.
+
+---
+
+## 🛠️ Development
+
+### Local Setup
+```bash
+# Run server
+cd server && go run .
+
+# Run agent
+cd agent && go run .
+```
+
+### Testing & Quality
+We maintain a strict quality standard with **80% code coverage** enforcement.
+
+```bash
+# Run all tests
+go test ./... -cover
+
+# Run security scan
+gosec ./...
+```
+
+---
+
+## 📄 License
+Patchli is released under the [MIT License](LICENSE).
