@@ -17,22 +17,107 @@
             overflow-x: hidden; 
         } 
         .data-mono { font-family: 'JetBrains Mono', monospace; } 
-        .blob-sidebar { background: rgba(20, 184, 166, 0.05); backdrop-filter: blur(10px); border-right: 1px solid rgba(20, 184, 166, 0.2); } 
-        .nav-link { color: #99f6e4; text-decoration: none; padding: 0.4rem 1rem; border-radius: 50px; background: rgba(255, 255, 255, 0.05); transition: all 0.3s ease; font-size: 0.8rem; } 
-        .nav-link:hover, .nav-link.active { background: rgba(20, 184, 166, 0.2); color: #fff; }
-        .glass-panel { background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(12px); border: 1px solid rgba(20, 184, 166, 0.1); border-radius: 1.5rem; } 
-        table { width: 100%; border-collapse: separate; border-spacing: 0 0.25rem; } 
-        th { text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: #5eead4; border-bottom: 1px solid rgba(20, 184, 166, 0.1); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; } 
-        td { padding: 0.75rem 1rem; background: rgba(20, 184, 166, 0.02); font-size: 0.85rem; } 
-        .status-badge { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; padding: 0.1rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3); } 
+        
+        /* 5. Glassmorphism Refinement */
+        .blob-sidebar { 
+            background: rgba(20, 184, 166, 0.03); 
+            backdrop-filter: blur(16px); 
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid rgba(20, 184, 166, 0.15); 
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+        } 
+        .glass-panel { 
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.8));
+            backdrop-filter: blur(12px); 
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(20, 184, 166, 0.15); 
+            border-radius: 1.5rem; 
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        } 
+
+        /* 19. Active Page Indicator */
+        .nav-link { 
+            color: #99f6e4; text-decoration: none; padding: 0.5rem 1rem; 
+            border-radius: 8px; background: transparent; transition: all 0.3s ease; font-size: 0.85rem; 
+            border-left: 2px solid transparent;
+        } 
+        .nav-link:hover { background: rgba(20, 184, 166, 0.1); color: #fff; }
+        .nav-link.active { 
+            background: rgba(20, 184, 166, 0.15); 
+            color: #fff; 
+            border-left: 2px solid #5eead4;
+            box-shadow: inset 20px 0 20px -20px rgba(94, 234, 212, 0.3);
+        }
+
+        table { width: 100%; border-collapse: separate; border-spacing: 0 0.4rem; } 
+        th { text-align: left; padding: 0.75rem 1rem; font-weight: 600; color: #5eead4; border-bottom: 1px solid rgba(20, 184, 166, 0.1); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; user-select: none; transition: color 0.2s;} 
+        th:hover { color: #fff; }
+        td { padding: 0.8rem 1rem; background: rgba(20, 184, 166, 0.03); font-size: 0.85rem; transition: background 0.2s; } 
+        tr:hover td { background: rgba(20, 184, 166, 0.08); }
+        
+        .status-badge { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.3); display: inline-flex; align-items: center; gap: 0.35rem;} 
+        .status-badge.offline { background: rgba(239, 68, 68, 0.2); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3); }
+        
         .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #134e4a; border-radius: 10px; }
+
+        /* 1. Skeleton Loaders */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        .skeleton {
+            background: linear-gradient(90deg, rgba(20,184,166,0.05) 25%, rgba(20,184,166,0.15) 50%, rgba(20,184,166,0.05) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite linear;
+            border-radius: 4px;
+        }
+
+        /* 3. Micro-animations */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .pulse-dot { position: relative; width: 6px; height: 6px; background-color: #34d399; border-radius: 50%; display: inline-block; }
+        .pulse-dot::before {
+            content: ''; position: absolute; left: -2px; top: -2px; width: 10px; height: 10px;
+            background-color: #34d399; border-radius: 50%; animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        .pulse-dot.offline { background-color: #ef4444; }
+        .pulse-dot.offline::before { display: none; } /* No pulse if offline */
+
+        /* 20. Tooltip System */
+        [data-tooltip] { position: relative; cursor: help; border-bottom: 1px dotted rgba(94, 234, 212, 0.5); }
+        [data-tooltip]:hover::after {
+            content: attr(data-tooltip); position: absolute; bottom: 120%; left: 50%; transform: translateX(-50%);
+            background: #020617; color: #fff; padding: 0.4rem 0.75rem; border-radius: 4px; font-size: 0.7rem;
+            white-space: nowrap; z-index: 50; border: 1px solid rgba(20, 184, 166, 0.3); font-family: 'Quicksand', sans-serif;
+            pointer-events: none; opacity: 1; text-transform: none; font-weight: normal; letter-spacing: normal;
+        }
+        [data-tooltip]:hover::before {
+            content: ''; position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+            border-width: 5px; border-style: solid; border-color: rgba(20, 184, 166, 0.3) transparent transparent transparent;
+            z-index: 50; pointer-events: none;
+        }
+
+        /* 38. Offline Indicator */
+        #offline-banner {
+            transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+            max-height: 0; padding: 0; margin-bottom: 0; opacity: 0; overflow: hidden;
+        }
+        #offline-banner.visible { max-height: 50px; padding: 0.75rem; margin-bottom: 1.5rem; opacity: 1; }
+
+        /* 8. Success Rate Circular Bar */
+        .circular-chart { display: block; margin: 0 auto; max-width: 80%; max-height: 250px; }
+        .circle-bg { fill: none; stroke: rgba(20, 184, 166, 0.1); stroke-width: 3.8; }
+        .circle { fill: none; stroke-width: 2.8; stroke-linecap: round; transition: stroke-dasharray 1s ease-out; }
+        .percentage { fill: #ccfbf1; font-family: 'JetBrains Mono', monospace; font-size: 0.5em; font-weight: bold; text-anchor: middle; }
     </style>
 </head>
 <body>
-    <aside class="blob-sidebar w-64 h-screen sticky top-0 flex flex-col p-6 border-r border-teal-900/30">
+    <aside class="blob-sidebar w-64 h-screen sticky top-0 flex flex-col p-6">
         <div class="mb-8">
-            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-emerald-500">Fleet.OS</h1>
+            <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-emerald-500">Fleet.OS</h1>
         </div>
         <nav class="flex flex-col gap-2 mb-12">
             <a class="nav-link active" href="/">Dashboard</a>
@@ -41,56 +126,89 @@
             <a class="nav-link" href="/settings">Settings</a>
         </nav>
         <div class="flex flex-col gap-6 mt-auto">
-            <div class="p-4 rounded-2xl bg-teal-950/30 border border-teal-900/20">
-                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold">Vitality</h3>
-                <p class="text-4xl font-bold data-mono" id="stat-vitality">0</p>
-                <div class="mt-1 text-[10px] opacity-40">ACTIVE</div>
+            <div class="p-4 rounded-xl bg-teal-950/40 border border-teal-900/30">
+                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold" data-tooltip="Total online nodes checking in">Vitality</h3>
+                <p class="text-4xl font-bold data-mono text-teal-50" id="stat-vitality"><span class="skeleton inline-block w-12 h-10"></span></p>
+                <div class="mt-1 text-[10px] opacity-40">ACTIVE NODES</div>
             </div>
-            <div class="p-4 rounded-2xl bg-teal-950/30 border border-teal-900/20">
-                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold">Immune</h3>
-                <p class="text-4xl font-bold data-mono" id="stat-immune">0%</p>
-                <div class="mt-1 text-[10px] opacity-40">COMPLIANCE</div>
+            
+            <!-- 8. Success Rate Viz -->
+            <div class="p-4 rounded-xl bg-teal-950/40 border border-teal-900/30 relative flex items-center justify-between">
+                <div>
+                    <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold" data-tooltip="Percentage of fleet fully patched">Immune</h3>
+                    <div class="mt-1 text-[10px] opacity-40">COMPLIANCE</div>
+                </div>
+                <div class="w-16 h-16">
+                    <svg viewBox="0 0 36 36" class="circular-chart text-emerald-400">
+                        <path class="circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <path class="circle stroke-current" id="immune-circle" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        <text x="18" y="20.35" class="percentage" id="stat-immune">0%</text>
+                    </svg>
+                </div>
             </div>
-            <div class="p-4 rounded-2xl bg-teal-950/30 border border-teal-900/20">
-                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold">Recovery</h3>
-                <p class="text-4xl font-bold data-mono" id="stat-recovery">0</p>
-                <div class="mt-1 text-[10px] opacity-40">REBOOTS</div>
+
+            <div class="p-4 rounded-xl bg-teal-950/40 border border-teal-900/30">
+                <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-1 font-bold" data-tooltip="Pending system restarts after patching">Recovery</h3>
+                <p class="text-4xl font-bold data-mono text-teal-50" id="stat-recovery"><span class="skeleton inline-block w-12 h-10"></span></p>
+                <div class="mt-1 text-[10px] opacity-40">PENDING REBOOTS</div>
             </div>
         </div>
     </aside>
-    <main class="flex-1 p-8 overflow-y-auto">
-        <div class="max-w-5xl">
+    
+    <main class="flex-1 p-8 overflow-y-auto relative">
+        <!-- 38. Offline Indicator -->
+        <div id="offline-banner" class="bg-red-900/50 border border-red-500/50 text-red-200 text-sm font-semibold rounded-lg flex items-center justify-center gap-2">
+            <span class="pulse-dot offline"></span> Connection Lost. Attempting to reconnect...
+        </div>
+
+        <div class="max-w-6xl mx-auto">
             <header class="flex justify-between items-end mb-8">
                 <h2 class="text-3xl font-bold text-teal-100">Fleet Overview</h2>
                 <span class="text-xs data-mono text-teal-500 opacity-60">SYSTEM STABLE // AUTO-PATCH ENABLED</span>
             </header>
+            
             <div class="glass-panel p-6 mb-8">
                 <h3 class="text-sm font-semibold mb-4 flex items-center gap-2">
                     <span class="w-2 h-2 bg-teal-400 rounded-full animate-ping"></span>
                     Live Patch Logs
                 </h3>
-                <div class="custom-scrollbar bg-slate-950/90 text-emerald-400 data-mono p-4 h-64 overflow-y-scroll rounded-xl border border-teal-900/50 text-xs leading-relaxed" id="log-terminal">
+                <div class="custom-scrollbar bg-[#050b14] text-emerald-400 data-mono p-4 h-64 overflow-y-scroll rounded-xl border border-teal-900/30 text-[0.8rem] leading-relaxed" id="log-terminal">
                     <span class="opacity-30">[System]</span> Initializing organic stream...<br/>
                     <span class="opacity-30">[System]</span> Waiting for patch logs to synchronize...<br/>
                 </div>
             </div>
+            
             <div class="glass-panel p-6">
                 <h3 class="text-sm font-semibold mb-4">Active Fleet Registry</h3>
                 <div class="overflow-x-auto">
                     <table>
                         <thead>
                             <tr>
-                                <th>Hostname</th>
-                                <th>Status</th>
-                                <th>OS</th>
-                                <th>Kernel</th>
-                                <th>Pulse</th>
+                                <th onclick="handleSort('hostname')">Hostname <span id="sort-hostname"></span></th>
+                                <th onclick="handleSort('status')" data-tooltip="Current health of the agent">Status <span id="sort-status"></span></th>
+                                <th onclick="handleSort('os')">OS Flavor <span id="sort-os"></span></th>
+                                <th onclick="handleSort('kernel')" data-tooltip="Running Kernel Version">Kernel <span id="sort-kernel"></span></th>
+                                <th data-tooltip="24H Activity Trend">Activity Trend</th>
+                                <th onclick="handleSort('pulse')" data-tooltip="Time since last check-in">Pulse <span id="sort-pulse"></span></th>
                             </tr>
                         </thead>
                         <tbody class="data-mono" id="node-table-body">
-                            <!-- Dynamic Rows -->
-                            <tr id="empty-row">
-                                <td colspan="5" class="text-center opacity-40 py-8">No nodes detected. Waiting for heartbeats...</td>
+                            <!-- Skeletons for initial load -->
+                            <tr id="skeleton-row-1">
+                                <td><div class="skeleton h-4 w-32"></div></td>
+                                <td><div class="skeleton h-5 w-20 rounded-full"></div></td>
+                                <td><div class="skeleton h-4 w-24"></div></td>
+                                <td><div class="skeleton h-4 w-36"></div></td>
+                                <td><div class="skeleton h-6 w-16"></div></td>
+                                <td><div class="skeleton h-4 w-16"></div></td>
+                            </tr>
+                            <tr id="skeleton-row-2">
+                                <td><div class="skeleton h-4 w-24"></div></td>
+                                <td><div class="skeleton h-5 w-16 rounded-full"></div></td>
+                                <td><div class="skeleton h-4 w-28"></div></td>
+                                <td><div class="skeleton h-4 w-32"></div></td>
+                                <td><div class="skeleton h-6 w-16"></div></td>
+                                <td><div class="skeleton h-4 w-20"></div></td>
                             </tr>
                         </tbody>
                     </table>
@@ -102,7 +220,32 @@
     <script>
         const terminal = document.getElementById('log-terminal');
         const nodeTableBody = document.getElementById('node-table-body');
-        const emptyRow = document.getElementById('empty-row');
+        const offlineBanner = document.getElementById('offline-banner');
+        
+        // 18. Persistent State for sorting
+        let currentSort = localStorage.getItem('fleetSortCol') || 'hostname';
+        let sortDesc = localStorage.getItem('fleetSortDesc') === 'true';
+        let nodesData = [];
+
+        function handleSort(column) {
+            if (currentSort === column) {
+                sortDesc = !sortDesc;
+            } else {
+                currentSort = column;
+                sortDesc = false;
+            }
+            localStorage.setItem('fleetSortCol', currentSort);
+            localStorage.setItem('fleetSortDesc', sortDesc);
+            renderNodes();
+        }
+
+        function updateSortIndicators() {
+            document.querySelectorAll('th span').forEach(el => el.textContent = '');
+            const indicator = document.getElementById(`sort-${currentSort}`);
+            if (indicator) {
+                indicator.textContent = sortDesc ? '↓' : '↑';
+            }
+        }
 
         function addLog(msg, type = 'system') {
             const span = document.createElement('span');
@@ -115,50 +258,187 @@
             terminal.appendChild(span);
             terminal.appendChild(content);
             terminal.appendChild(br);
+            
+            // Keep only last 100 lines to prevent DOM bloat
+            if (terminal.childNodes.length > 300) {
+                for (let i = 0; i < 3; i++) terminal.firstChild.remove();
+            }
             terminal.scrollTop = terminal.scrollHeight;
         }
 
         async function updateStats() {
             try {
                 const res = await fetch('/api/v1/stats');
+                if(!res.ok) throw new Error("API Error");
                 const data = await res.json();
+                
                 document.getElementById('stat-vitality').textContent = data.vitality;
-                document.getElementById('stat-immune').textContent = data.immune;
                 document.getElementById('stat-recovery').textContent = data.recovery;
+                
+                // Update immune donut chart (assuming data.immune is a string like "95%")
+                const immuneVal = parseInt(data.immune) || 0;
+                document.getElementById('stat-immune').textContent = `${immuneVal}%`;
+                document.getElementById('immune-circle').setAttribute('stroke-dasharray', `${immuneVal}, 100`);
+                
+                // Connection is healthy
+                offlineBanner.classList.remove('visible');
             } catch (err) {
                 console.error('Failed to fetch stats:', err);
+                offlineBanner.classList.add('visible');
             }
         }
 
-        async function updateNodes() {
+        // 7. Sparklines Drawing
+        function drawSparkline(canvasId, dataPoints) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            ctx.clearRect(0, 0, w, h);
+            if (!dataPoints || dataPoints.length === 0) return;
+            
+            const max = Math.max(...dataPoints, 1);
+            const min = 0;
+            const stepX = w / (dataPoints.length - 1);
+            
+            ctx.beginPath();
+            ctx.moveTo(0, h - ((dataPoints[0] - min) / (max - min)) * h);
+            
+            for (let i = 1; i < dataPoints.length; i++) {
+                ctx.lineTo(i * stepX, h - ((dataPoints[i] - min) / (max - min)) * h);
+            }
+            
+            ctx.strokeStyle = '#34d399';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        // 39. Lazy Loaded Graphs via IntersectionObserver
+        const sparklineObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const canvas = entry.target;
+                    // In a real app, you'd fetch node-specific trends. Using mock data here.
+                    const mockData = Array.from({length: 10}, () => Math.floor(Math.random() * 100));
+                    drawSparkline(canvas.id, mockData);
+                    sparklineObserver.unobserve(canvas); // Only draw once
+                }
+            });
+        });
+
+        function renderNodes() {
+            if (!nodesData || nodesData.length === 0) {
+                nodeTableBody.innerHTML = `<tr><td colspan="6" class="text-center opacity-40 py-8">No nodes detected. Waiting for heartbeats...</td></tr>`;
+                return;
+            }
+
+            // Sort data
+            const sorted = [...nodesData].sort((a, b) => {
+                let valA = a[currentSort] || '';
+                let valB = b[currentSort] || '';
+                if (currentSort === 'pulse') {
+                    valA = new Date(a.last_heartbeat).getTime();
+                    valB = new Date(b.last_heartbeat).getTime();
+                }
+                if (valA < valB) return sortDesc ? 1 : -1;
+                if (valA > valB) return sortDesc ? -1 : 1;
+                return 0;
+            });
+
+            updateSortIndicators();
+
+            // 37. Delta-only Updates
+            const existingRows = new Map();
+            Array.from(nodeTableBody.children).forEach(row => {
+                if (row.id && row.id.startsWith('node-')) {
+                    existingRows.set(row.id, row);
+                }
+            });
+
+            // Remove skeletons if they exist
+            document.querySelectorAll('[id^="skeleton-row"]').forEach(el => el.remove());
+
+            const newRowOrder = [];
+
+            sorted.forEach(node => {
+                const rowId = `node-${node.hostname.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                let tr = existingRows.get(rowId);
+                const isOffline = (new Date() - new Date(node.last_heartbeat)) > 60000; // 1 min threshold
+                const statusClass = isOffline ? 'offline' : '';
+                const displayStatus = isOffline ? 'OFFLINE' : (node.status ? node.status.toUpperCase() : 'UNKNOWN');
+                
+                const timeAgoStr = timeAgo(node.last_heartbeat);
+                
+                const htmlContent = `
+                    <td class="font-bold text-teal-200">${node.hostname}</td>
+                    <td><span class="status-badge ${statusClass}"><span class="pulse-dot ${statusClass}"></span> ${displayStatus}</span></td>
+                    <td>${node.os || 'Unknown'}</td>
+                    <td class="opacity-60 text-xs">${node.kernel || 'N/A'}</td>
+                    <td><canvas id="spark-${rowId}" width="60" height="20"></canvas></td>
+                    <td class="text-teal-400/60 italic text-xs">${timeAgoStr}</td>
+                `;
+
+                if (!tr) {
+                    // Create new row
+                    tr = document.createElement('tr');
+                    tr.id = rowId;
+                    tr.innerHTML = htmlContent;
+                    // Observe new canvas
+                    setTimeout(() => {
+                        const canvas = document.getElementById(`spark-${rowId}`);
+                        if(canvas) sparklineObserver.observe(canvas);
+                    }, 0);
+                } else {
+                    // Update existing row if content changed (simple check)
+                    if (tr.dataset.contentHash !== htmlContent) {
+                        const oldCanvas = tr.querySelector('canvas');
+                        let needsRedraw = !oldCanvas;
+                        
+                        tr.innerHTML = htmlContent;
+                        
+                        if (!needsRedraw) {
+                           const newCanvasContainer = tr.querySelector('td:nth-child(5)');
+                           newCanvasContainer.innerHTML = '';
+                           newCanvasContainer.appendChild(oldCanvas);
+                        } else {
+                           setTimeout(() => {
+                               const canvas = document.getElementById(`spark-${rowId}`);
+                               if(canvas) sparklineObserver.observe(canvas);
+                           }, 0);
+                        }
+                    }
+                }
+                tr.dataset.contentHash = htmlContent;
+                newRowOrder.push(tr);
+                existingRows.delete(rowId);
+            });
+
+            // Remove rows that no longer exist
+            existingRows.forEach(row => row.remove());
+
+            // Reorder DOM to match sorted array
+            newRowOrder.forEach((row, index) => {
+                if (nodeTableBody.children[index] !== row) {
+                    nodeTableBody.appendChild(row);
+                }
+            });
+        }
+
+        async function fetchNodesData() {
             try {
                 const res = await fetch('/api/v1/nodes');
-                const nodes = await res.json();
-                
-                if (nodes.length > 0) {
-                    if (emptyRow) emptyRow.remove();
-                    
-                    // Clear existing rows except header (if any, but we use tbody)
-                    nodeTableBody.innerHTML = '';
-                    
-                    nodes.forEach(node => {
-                        const tr = document.createElement('tr');
-                        tr.innerHTML = `
-                            <td class="font-bold text-teal-200">${node.hostname}</td>
-                            <td><span class="status-badge">${node.status}</span></td>
-                            <td>${node.os}</td>
-                            <td class="opacity-60">${node.kernel}</td>
-                            <td class="text-teal-400/60 italic text-xs">${timeAgo(node.last_heartbeat)}</td>
-                        `;
-                        nodeTableBody.appendChild(tr);
-                    });
-                }
+                if(!res.ok) throw new Error("API Error");
+                nodesData = await res.json();
+                renderNodes();
             } catch (err) {
                 console.error('Failed to fetch nodes:', err);
             }
         }
 
         function timeAgo(dateString) {
+            if (!dateString) return 'Never';
             const date = new Date(dateString);
             const now = new Date();
             const seconds = Math.floor((now - date) / 1000);
@@ -178,14 +458,19 @@
             };
             source.onerror = function() {
                 console.error("SSE connection lost. Reconnecting...");
+                offlineBanner.classList.add('visible');
+            };
+            source.onopen = function() {
+                offlineBanner.classList.remove('visible');
             };
         }
 
         // Initial load and polling
+        updateSortIndicators();
         updateStats();
-        updateNodes();
+        fetchNodesData();
         setInterval(updateStats, 5000);
-        setInterval(updateNodes, 10000);
+        setInterval(fetchNodesData, 10000);
 
         addLog("Connection established via local backbone.", "system");
     </script>
