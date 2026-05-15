@@ -1,5 +1,10 @@
 # <img src="server/static/assets/img/logo.png" width="48" height="48" valign="middle"> Patchli
 
+[![CI](https://github.com/arumes31/patchli/actions/workflows/ci.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/ci.yml)
+[![CD](https://github.com/arumes31/patchli/actions/workflows/cd.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/cd.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/arumes31/patchli)](https://goreportcard.com/report/github.com/arumes31/patchli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 ### Distributed Linux Patch Management & Fleet Monitoring System
 
 Patchli is a high-performance, distributed Patch Management system designed to seamlessly orchestrate updates across massive fleets of Linux and Windows nodes. It provides a centralized Control Plane for monitoring, scheduling, and executing updates with a focus on reliability, security, and real-time observability.
