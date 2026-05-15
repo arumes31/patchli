@@ -155,7 +155,7 @@ func RunAgent(ctx context.Context) {
 					continue
 				}
 				log.Printf("Received command: %s (Job: %s)", cmd.Action, cmd.ID)
-				go executeCommand(conn, pm, cmd)
+				go executeCommand(pm, cmd)
 			}
 		}
 	}
@@ -223,7 +223,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 		if resp.StatusCode == http.StatusOK {
 			var cmd CommandPayload
 			if err := json.NewDecoder(resp.Body).Decode(&cmd); err == nil && cmd.Action != "" {
-				go executeCommand(nil, pm, cmd)
+				go executeCommand(pm, cmd)
 			}
 		}
 		_ = resp.Body.Close()
@@ -235,7 +235,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 	}
 }
 
-func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd CommandPayload) {
+func executeCommand(pm updater.PackageManager, cmd CommandPayload) {
 	ctx := context.Background()
 	var res updater.UpdateResult
 	var err error

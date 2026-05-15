@@ -57,7 +57,7 @@ func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
 		case sig := <-sigChan:
 			log.Printf("Watchdog received signal: %v", sig)
 			if cmd.Process != nil {
-				cmd.Process.Signal(sig)
+				_ = cmd.Process.Signal(sig)
 			}
 			<-done
 			log.Println("Watchdog exiting cleanly.")
