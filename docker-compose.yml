@@ -8,16 +8,40 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/patchli?sslmode=disable
-      - REDIS_URL=redis:6379
-      - JWT_SECRET=${JWT_SECRET}
+      # Required
+      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/patchli?sslmode=disable
+      - REDIS_URL=${REDIS_URL:-redis:6379}
+      - JWT_SECRET=${JWT_SECRET:-changeme_jwt_secret}
+      - REGISTRATION_SECRET=${REGISTRATION_SECRET:-changeme_reg_secret}
+      # Optional
+      - PORT=${PORT:-8080}
       - BASE_URL=${BASE_URL:-http://localhost:8080}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
     depends_on:
       - postgres
       - redis
     restart: unless-stopped
     volumes:
       - ./data/server:/app/data
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    environment:
+      # Required
+      - SERVER_URL=${SERVER_URL:-server:8080}
+      # Optional
+      - TRUSTED_PUB_KEY=${TRUSTED_PUB_KEY:-}
+    depends_on:
+      - server
+    restart: unless-stopped
+    # Use privileged/bind mounts if the agent needs host access
+    # privileged: true
+    # volumes:
+    #   - /:/host:ro
 
   postgres:
     image: postgres:15-alpine
