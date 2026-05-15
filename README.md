@@ -1,4 +1,4 @@
-# <img src="temp/logo_14.png" width="48" height="48" valign="middle"> Patchli
+# <img src="server/static/assets/img/logo.png" width="48" height="48" valign="middle"> Patchli
 
 ### Distributed Linux Patch Management & Fleet Monitoring System
 
