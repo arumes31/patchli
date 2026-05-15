@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -40,17 +39,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
-
-	// Static files
-	exe, err := os.Executable()
-	if err != nil {
-		log.Printf("Failed to resolve executable path: %v", err)
-		exe = "."
-	}
-	basePath := filepath.Dir(exe)
-	if _, err := os.Stat(filepath.Join(basePath, "server/static/index.html")); os.IsNotExist(err) {
-		basePath = "."
-	}
 
 	// Use embedded FS for static files
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.FS))))

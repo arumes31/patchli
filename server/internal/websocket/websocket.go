@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +14,16 @@ import (
 	"github.com/patchli/server/internal/fleet"
 	"github.com/patchli/server/internal/models"
 )
+
+var jwtSecret []byte
+
+func init() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET environment variable is required")
+	}
+	jwtSecret = []byte(secret)
+}
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
@@ -37,17 +48,16 @@ var upgrader = websocket.Upgrader{
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Require Auth
 	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		http.Error(w, "Unauthorized - Invalid Header", http.StatusUnauthorized)
 		return
 	}
 	
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
 	
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, log.Output(2, "Unexpected signing method")
+			return nil, errors.New("unexpected signing method")
 		}
 		return jwtSecret, nil
 	})
@@ -103,5 +113,5 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "log":
 			// Handle log payload
 		}
-	}
-}
+		}
+		}

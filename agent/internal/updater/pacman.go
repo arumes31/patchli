@@ -66,9 +66,9 @@ func (m *PacmanManager) RebootRequired() bool {
 			parts := strings.Split(installedStr, " ")
 			if len(parts) >= 2 {
 				installedKernel := parts[1]
-				// Basic check, replace - with . if needed or just do a substring match.
-				if !strings.Contains(installedKernel, strings.ReplaceAll(runningKernel, "-", "")) && 
-				   !strings.Contains(strings.ReplaceAll(runningKernel, "-", ""), strings.ReplaceAll(installedKernel, "-", "")) {
+				normRunning := strings.ReplaceAll(strings.ReplaceAll(runningKernel, "-", ""), ".", "")
+				normInstalled := strings.ReplaceAll(strings.ReplaceAll(installedKernel, "-", ""), ".", "")
+				if !strings.Contains(normInstalled, normRunning) && !strings.Contains(normRunning, normInstalled) {
 					return true
 				}
 			}

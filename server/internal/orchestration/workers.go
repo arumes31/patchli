@@ -66,7 +66,18 @@ func (wp *WorkerPool) worker() {
 	for {
 		select {
 		case <-wp.stopChan:
-			return
+			for {
+				select {
+				case job, ok := <-wp.jobQueue:
+					if ok {
+						wp.processJob(job)
+					} else {
+						return
+					}
+				default:
+					return
+				}
+			}
 		case job, ok := <-wp.jobQueue:
 			if !ok {
 				return
