@@ -384,6 +384,7 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 
 func verifySignature(filePath string) error {
 	// TODO: implement actual signature verification
+	_ = filePath
 	return nil
 }
 
