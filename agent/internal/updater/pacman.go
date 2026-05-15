@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
+	
 )
 
 // PacmanManager implements the PackageManager interface for pacman (Arch Linux).
 type PacmanManager struct{}
 
 func (m *PacmanManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	cmd := exec.CommandContext(ctx, "pacman", "-Sy")
+	cmd := execCommandContext(ctx, "pacman", "-Sy")
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -22,7 +22,7 @@ func (m *PacmanManager) CheckUpdates(ctx context.Context) (UpdateResult, error) 
 		return UpdateResult{Success: false, Output: out.String(), Error: err}, err
 	}
 
-	cmd = exec.CommandContext(ctx, "pacman", "-Qu")
+	cmd = execCommandContext(ctx, "pacman", "-Qu")
 	out.Reset()
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -40,7 +40,7 @@ func (m *PacmanManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 		args = append([]string{"-S", "--noconfirm"}, packages...)
 	}
 
-	cmd := exec.CommandContext(ctx, "pacman", args...)
+	cmd := execCommandContext(ctx, "pacman", args...)
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -60,13 +60,13 @@ func (m *PacmanManager) PreFlightCheck(ctx context.Context) error {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "pgrep", "-x", "pacman")
-	if err := cmd.Run(); err == nil {
-		return fmt.Errorf("pacman is currently locked or in use")
+	if _, err := statFunc("/var/lib/pacman/db.lck"); err == nil {
+		return fmt.Errorf("pacman is currently locked")
 	}
 	return nil
 }
 
 func (m *PacmanManager) Cleanup(ctx context.Context) error {
-	return exec.CommandContext(ctx, "pacman", "-Sc", "--noconfirm").Run()
+	return execCommandContext(ctx, "pacman", "-Sc", "--noconfirm").Run()
 }
+

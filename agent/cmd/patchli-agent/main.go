@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -279,7 +280,7 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "update_agent":
 		log.Printf("Auto-updating agent...")
-		res = performSecureAgentUpdate(ctx)
+		res = performSecureAgentUpdateFunc(ctx)
 	case "chaos_restart":
 		log.Printf("CHAOS MONKEY: Restarting agent...")
 		os.Exit(1)
@@ -313,7 +314,7 @@ func executeCommand(conn *websocket.Conn, pm updater.PackageManager, cmd Command
 	log.Printf("Job %s finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
 }
 
-func performSecureAgentUpdate(ctx context.Context) updater.UpdateResult {
+var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResult {
 	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/download/agent", nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}

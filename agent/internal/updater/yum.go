@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os/exec"
+	
 )
 
 // YumManager implements the PackageManager interface for yum (Older RHEL/CentOS).
 type YumManager struct{}
 
 func (m *YumManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	cmd := exec.CommandContext(ctx, "yum", "check-update", "-y")
+	cmd := execCommandContext(ctx, "yum", "check-update", "-y")
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -31,7 +31,7 @@ func (m *YumManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 		args = append([]string{"install", "-y"}, packages...)
 	}
 
-	cmd := exec.CommandContext(ctx, "yum", args...)
+	cmd := execCommandContext(ctx, "yum", args...)
 	
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -42,17 +42,19 @@ func (m *YumManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func (m *YumManager) RebootRequired() bool {
-	cmd := exec.Command("needs-restarting", "-r")
-	err := cmd.Run()
-	return err != nil && cmd.ProcessState.ExitCode() == 1
+	_, err := statFunc("/var/run/reboot-required")
+	return err == nil
 }
 
 func (m *YumManager) PreFlightCheck(ctx context.Context) error {
 	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
+	if _, err := statFunc("/var/run/yum.pid"); err == nil {
+		return fmt.Errorf("yum is currently locked or in use")
+	}
 
-	cmd := exec.CommandContext(ctx, "pgrep", "-x", "yum")
+	cmd := execCommandContext(ctx, "pgrep", "-x", "yum")
 	if err := cmd.Run(); err == nil {
 		return fmt.Errorf("yum is currently locked or in use")
 	}
@@ -60,9 +62,10 @@ func (m *YumManager) PreFlightCheck(ctx context.Context) error {
 }
 
 func (m *YumManager) Cleanup(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "sh", "-c", "yum help | grep -q autoremove")
+	cmd := execCommandContext(ctx, "sh", "-c", "yum help | grep -q autoremove")
 	if err := cmd.Run(); err == nil {
-		return exec.CommandContext(ctx, "yum", "autoremove", "-y").Run()
+		return execCommandContext(ctx, "yum", "autoremove", "-y").Run()
 	}
-	return exec.CommandContext(ctx, "yum", "clean", "all").Run()
+	return execCommandContext(ctx, "yum", "clean", "all").Run()
 }
+

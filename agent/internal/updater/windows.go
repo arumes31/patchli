@@ -5,7 +5,6 @@ package updater
 
 import (
 	"context"
-	"os/exec"
 	"strings"
 )
 
@@ -13,14 +12,13 @@ import (
 type WindowsManager struct{}
 
 func (m *WindowsManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
-	// A simple implementation using PowerShell to query WUA.
 	script := `
 $UpdateSession = New-Object -ComObject Microsoft.Update.Session
 $UpdateSearcher = $UpdateSession.CreateUpdateSearcher()
 $SearchResult = $UpdateSearcher.Search("IsInstalled=0")
 $SearchResult.Updates.Count
 `
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
+	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return UpdateResult{Success: false, Output: string(out), Error: err}, err
@@ -42,7 +40,7 @@ if ($pkgNames.Length -gt 0 -and $pkgNames[0] -ne "") {
 	Install-WindowsUpdate -AcceptAll -IgnoreReboot
 }
 `
-	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
+	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.CombinedOutput()
 	return UpdateResult{Success: err == nil, Output: string(out), Error: err}, err
 }
@@ -52,9 +50,9 @@ func (m *WindowsManager) RebootRequired() bool {
 $sysInfo = New-Object -ComObject "Microsoft.Update.SystemInfo"
 $sysInfo.RebootRequired
 `
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
+	cmd := execCommand("powershell", "-NoProfile", "-Command", script)
 	out, err := cmd.Output()
-	return err == nil && string(out) == "True\r\n"
+	return err == nil && strings.TrimSpace(string(out)) == "True"
 }
 
 func (m *WindowsManager) PreFlightCheck(ctx context.Context) error {
@@ -75,5 +73,5 @@ try {
 	Start-Service wuauserv
 }
 `
-	return exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Run()
+	return execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script).Run()
 }
