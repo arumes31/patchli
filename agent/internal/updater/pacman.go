@@ -61,14 +61,22 @@ func (m *PacmanManager) RebootRequired() bool {
 		
 		pacmanOut, err := execCommand("pacman", "-Q", "linux").Output()
 		if err == nil {
-			installedKernel := strings.TrimSpace(string(pacmanOut))
-			if !strings.Contains(installedKernel, runningKernel) {
-				return true
+			// output is generally "linux 6.4.12.arch1-1"
+			installedStr := strings.TrimSpace(string(pacmanOut))
+			parts := strings.Split(installedStr, " ")
+			if len(parts) >= 2 {
+				installedKernel := parts[1]
+				// Basic check, replace - with . if needed or just do a substring match.
+				if !strings.Contains(installedKernel, strings.ReplaceAll(runningKernel, "-", "")) && 
+				   !strings.Contains(strings.ReplaceAll(runningKernel, "-", ""), strings.ReplaceAll(installedKernel, "-", "")) {
+					return true
+				}
 			}
 		}
 	}
 	
-	if err := execCommand("needrestart", "-b").Run(); err == nil {
+	out, err := execCommand("needrestart", "-b", "-r", "l").Output()
+	if err == nil && strings.Contains(string(out), "NEEDRESTART-KSTA: 3") {
 		return true
 	}
 	

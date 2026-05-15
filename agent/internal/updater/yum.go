@@ -43,10 +43,6 @@ func (m *YumManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func (m *YumManager) RebootRequired() bool {
-	if _, err := statFunc("/var/run/reboot-required"); err == nil {
-		return true
-	}
-	
 	cmd := execCommand("needs-restarting", "-r")
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {

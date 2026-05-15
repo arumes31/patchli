@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -21,6 +23,8 @@ import (
 	"github.com/patchli/agent/internal/state"
 	"github.com/patchli/agent/internal/updater"
 )
+
+var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
 
 // Message types matching server
 const (
@@ -363,9 +367,10 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 	agentPath := "/usr/local/bin/patchli-agent"
 	if runtime.GOOS == "windows" {
 		exe, err := os.Executable()
-		if err == nil {
-			agentPath = exe
+		if err != nil {
+			return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to determine executable path: %v", err)}
 		}
+		agentPath = exe
 	}
 	
 	backupPath := agentPath + ".bak." + fmt.Sprint(time.Now().Unix())
@@ -383,14 +388,55 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 }
 
 func verifySignature(filePath string) error {
-	// TODO: implement actual signature verification
-	_ = filePath
+	if TrustedPubKey == "" {
+		// Log warning or return nil depending on strictness policy.
+		log.Println("WARNING: TRUSTED_PUB_KEY not set, skipping signature verification")
+		return nil
+	}
+	
+	pubKeyBytes, err := base64.StdEncoding.DecodeString(TrustedPubKey)
+	if err != nil {
+		return fmt.Errorf("failed to decode trusted public key: %v", err)
+	}
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("invalid public key size")
+	}
+	
+	sigPath := filePath + ".sig"
+	sigBase64, err := os.ReadFile(sigPath)
+	if err != nil {
+		return fmt.Errorf("failed to read signature file %s: %v", sigPath, err)
+	}
+	
+	sigBytes, err := base64.StdEncoding.DecodeString(string(sigBase64))
+	if err != nil {
+		return fmt.Errorf("failed to decode signature: %v", err)
+	}
+	
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read binary: %v", err)
+	}
+	
+	if !ed25519.Verify(pubKeyBytes, data, sigBytes) {
+		return fmt.Errorf("cryptographic signature verification failed")
+	}
 	return nil
 }
 
 func restartAgent(ctx context.Context) ([]byte, error) {
 	if runtime.GOOS == "windows" {
-		return exec.CommandContext(ctx, "powershell", "Restart-Service", "-Name", "patchli-agent").CombinedOutput()
+		scPath, err := exec.LookPath("sc.exe")
+		if err == nil {
+			_ = exec.CommandContext(ctx, scPath, "stop", "patchli-agent").Run()
+			return exec.CommandContext(ctx, scPath, "start", "patchli-agent").CombinedOutput()
+		}
+		
+		psPath, err := exec.LookPath("powershell.exe")
+		if err != nil {
+			return nil, fmt.Errorf("failed to find powershell.exe or sc.exe: %v", err)
+		}
+		return exec.CommandContext(ctx, psPath, "Restart-Service", "-Name", "patchli-agent").CombinedOutput()
 	}
 	if _, err := os.Stat("/run/openrc"); err == nil {
 		return exec.CommandContext(ctx, "rc-service", "patchli-agent", "restart").CombinedOutput()

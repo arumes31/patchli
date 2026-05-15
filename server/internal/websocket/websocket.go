@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/patchli/server/internal/db"
 	"github.com/patchli/server/internal/fleet"
@@ -37,6 +39,21 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	
+	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+	jwtSecret := []byte(os.Getenv("JWT_SECRET"))
+	
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, log.Output(2, "Unexpected signing method")
+		}
+		return jwtSecret, nil
+	})
+
+	if err != nil || !token.Valid {
+		http.Error(w, "Unauthorized - Invalid Token", http.StatusUnauthorized)
 		return
 	}
 

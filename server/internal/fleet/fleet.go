@@ -50,7 +50,7 @@ func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {
 	cutoff := time.Now().Add(-ttl)
 	for mac, detail := range am.details {
 		last, err := time.Parse(time.RFC3339, detail.LastHeartbeat)
-		if err == nil && last.Before(cutoff) {
+		if err != nil || last.Before(cutoff) {
 			delete(am.details, mac)
 			delete(am.agents, mac)
 			delete(am.activeJobs, mac)

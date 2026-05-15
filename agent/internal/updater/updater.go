@@ -66,12 +66,16 @@ func SelfDestruct() error {
 
 	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
 	var cmd *exec.Cmd
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %v", err)
+	}
+
 	if runtime.GOOS == "windows" {
-		exePath, _ := os.Executable()
 		script := fmt.Sprintf(`ping 127.0.0.1 -n 3 > nul & del /F /Q "%s"`, exePath)
 		cmd = execCommand("cmd.exe", "/C", script)
 	} else {
-		script := `sleep 2; rm -f /usr/local/bin/patchli-agent`
+		script := fmt.Sprintf(`sleep 2; rm -f "%s"`, exePath)
 		cmd = execCommand("sh", "-c", script)
 	}
 	detachProcess(cmd)

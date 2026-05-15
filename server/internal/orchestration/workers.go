@@ -63,8 +63,16 @@ func (wp *WorkerPool) ResumeGroup(groupID int) {
 }
 
 func (wp *WorkerPool) worker() {
-	for job := range wp.jobQueue {
-		wp.processJob(job)
+	for {
+		select {
+		case <-wp.stopChan:
+			return
+		case job, ok := <-wp.jobQueue:
+			if !ok {
+				return
+			}
+			wp.processJob(job)
+		}
 	}
 }
 

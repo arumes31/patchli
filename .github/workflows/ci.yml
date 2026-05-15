@@ -133,7 +133,11 @@ jobs:
           curl -f http://localhost:8080/health || exit 1
           sudo iptables -A INPUT -p tcp --dport 6379 -j DROP
           sleep 2
-          curl -f http://localhost:8080/health || echo "Graceful degradation confirmed"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Expected degraded but got $STATUS"
+            exit 1
+          fi
           sudo iptables -D INPUT -p tcp --dport 6379 -j DROP
           sleep 2
           curl -f http://localhost:8080/health || exit 1

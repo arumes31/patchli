@@ -14,6 +14,7 @@ import (
 	"github.com/patchli/server/internal/db"
 	"github.com/patchli/server/internal/orchestration"
 	"github.com/patchli/server/internal/websocket"
+	"github.com/patchli/server/static"
 )
 
 func main() {
@@ -41,13 +42,18 @@ func main() {
 	})
 
 	// Static files
-	exe, _ := os.Executable()
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("Failed to resolve executable path: %v", err)
+		exe = "."
+	}
 	basePath := filepath.Dir(exe)
 	if _, err := os.Stat(filepath.Join(basePath, "server/static/index.html")); os.IsNotExist(err) {
 		basePath = "."
 	}
 
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(basePath, "server/static")))))
+	// Use embedded FS for static files
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.FS))))
 
 	// Dashboard UI
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +61,13 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeFile(w, r, filepath.Join(basePath, "server/static/index.html"))
+		data, err := static.FS.ReadFile("index.html")
+		if err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(data)
 	})
 	mux.HandleFunc("/setup", api.ServeSetupUI)
 
