@@ -71,6 +71,9 @@ func runMigrations(dbURL string) error {
 
 // UpdateNodeStatus updates the node's heartbeat and status in the database.
 func UpdateNodeStatus(mac string, hostname string, osName string, osVersion string, kernel string, status string) error {
+	if DB == nil {
+		return nil
+	}
 	query := `
 		INSERT INTO nodes (mac_address, hostname, os_name, os_version, kernel_version, status, last_heartbeat)
 		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
@@ -88,6 +91,9 @@ func UpdateNodeStatus(mac string, hostname string, osName string, osVersion stri
 
 // IsJobRunning checks if a job is still in 'running' state.
 func IsJobRunning(jobID string) (bool, error) {
+	if DB == nil {
+		return false, nil
+	}
 	var status string
 	err := DB.QueryRow("SELECT status FROM audit_logs WHERE job_id = $1 ORDER BY created_at DESC LIMIT 1", jobID).Scan(&status)
 	if err == sql.ErrNoRows {

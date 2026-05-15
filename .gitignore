@@ -1,7 +1,6 @@
 # Go testing and coverage
 /data/
 /coverage/
-*_test.go
 coverage.out
 coverage.html
 coverage.txt
