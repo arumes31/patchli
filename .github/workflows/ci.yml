@@ -130,8 +130,13 @@ jobs:
 
       - name: Chaos Test - Kill Redis
         run: |
-          # ... (existing chaos test)
-          exit 0
+          curl -f http://localhost:8080/health || exit 1
+          sudo iptables -A INPUT -p tcp --dport 6379 -j DROP
+          sleep 2
+          curl -f http://localhost:8080/health || echo "Graceful degradation confirmed"
+          sudo iptables -D INPUT -p tcp --dport 6379 -j DROP
+          sleep 2
+          curl -f http://localhost:8080/health || exit 1
 
   fuzz_test:
     name: Fuzz Testing

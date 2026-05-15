@@ -18,6 +18,7 @@ type WorkerPool struct {
 	pausedGroups    map[int]bool
 	pauseCond       *sync.Cond
 	mu              sync.Mutex
+	stopChan        chan struct{}
 }
 
 func NewWorkerPool(maxWorkers int) *WorkerPool {
@@ -26,6 +27,7 @@ func NewWorkerPool(maxWorkers int) *WorkerPool {
 		maxWorkers:      maxWorkers,
 		groupSemaphores: make(map[int]chan struct{}),
 		pausedGroups:    make(map[int]bool),
+		stopChan:        make(chan struct{}),
 	}
 	wp.pauseCond = sync.NewCond(&wp.mu)
 	return wp
@@ -35,6 +37,10 @@ func (wp *WorkerPool) Start() {
 	for i := 0; i < wp.maxWorkers; i++ {
 		go wp.worker()
 	}
+}
+
+func (wp *WorkerPool) Stop() {
+	close(wp.stopChan)
 }
 
 func (wp *WorkerPool) Submit(job models.Job) {

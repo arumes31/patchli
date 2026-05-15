@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS schedules (
 
 CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
+    job_id VARCHAR(255),
     node_id INT REFERENCES nodes(id) ON DELETE CASCADE,
     action VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL,

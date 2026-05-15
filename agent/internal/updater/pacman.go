@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	
+	"os"
+	"strings"
 )
 
 // PacmanManager implements the PackageManager interface for pacman (Arch Linux).
@@ -51,7 +52,26 @@ func (m *PacmanManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 }
 
 func (m *PacmanManager) RebootRequired() bool {
-	// Arch Linux usually requires reboot if kernel or systemd is updated.
+	unameOut, err := execCommand("uname", "-r").Output()
+	if err == nil {
+		runningKernel := strings.TrimSpace(string(unameOut))
+		if _, err := statFunc(fmt.Sprintf("/usr/lib/modules/%s", runningKernel)); os.IsNotExist(err) {
+			return true
+		}
+		
+		pacmanOut, err := execCommand("pacman", "-Q", "linux").Output()
+		if err == nil {
+			installedKernel := strings.TrimSpace(string(pacmanOut))
+			if !strings.Contains(installedKernel, runningKernel) {
+				return true
+			}
+		}
+	}
+	
+	if err := execCommand("needrestart", "-b").Run(); err == nil {
+		return true
+	}
+	
 	return false
 }
 

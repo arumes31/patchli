@@ -40,7 +40,21 @@ func (am *AgentManager) Unregister(mac string) {
 	defer am.mu.Unlock()
 	delete(am.agents, mac)
 	if d, ok := am.details[mac]; ok {
-		d.Status = "Offline"
+		d.Status = "offline"
+	}
+}
+
+func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	cutoff := time.Now().Add(-ttl)
+	for mac, detail := range am.details {
+		last, err := time.Parse(time.RFC3339, detail.LastHeartbeat)
+		if err == nil && last.Before(cutoff) {
+			delete(am.details, mac)
+			delete(am.agents, mac)
+			delete(am.activeJobs, mac)
+		}
 	}
 }
 

@@ -17,11 +17,8 @@ var (
 )
 
 func init() {
-	if len(registrationSecret) == 0 {
-		registrationSecret = []byte("default-registration-secret-change-me")
-	}
-	if len(jwtSecret) == 0 {
-		jwtSecret = []byte("default-jwt-secret-change-me")
+	if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
+		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
 	}
 }
 
@@ -35,7 +32,7 @@ func GenerateAgentJWT(macAddr string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": macAddr,
 		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(time.Hour * 24 * 365).Unix(),
+		"exp": time.Now().Add(time.Hour * 24).Unix(), // TODO: refresh token flow
 	})
 	return token.SignedString(jwtSecret)
 }

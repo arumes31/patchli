@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 )
 
 // UpdateResult represents the outcome of an update operation.
@@ -64,8 +65,15 @@ func SelfDestruct() error {
 	}
 
 	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
-	script := `sleep 2; rm -f /usr/local/bin/patchli-agent`
-	cmd := execCommand("sh", "-c", script)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		exePath, _ := os.Executable()
+		script := fmt.Sprintf(`ping 127.0.0.1 -n 3 > nul & del /F /Q "%s"`, exePath)
+		cmd = execCommand("cmd.exe", "/C", script)
+	} else {
+		script := `sleep 2; rm -f /usr/local/bin/patchli-agent`
+		cmd = execCommand("sh", "-c", script)
+	}
 	detachProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		errs = append(errs, err)

@@ -6,11 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"text/template"
 	"time"
 
 	"github.com/patchli/server/internal/auth"
 	"github.com/patchli/server/internal/fleet"
+	"github.com/patchli/server/static"
 )
 
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
@@ -26,8 +28,11 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 	online := 0
 	rebootRequired := 0
 	for _, n := range nodes {
-		if n.Status == "Online" {
+		if strings.ToLower(n.Status) == "online" {
 			online++
+		}
+		if strings.Contains(strings.ToLower(n.Status), "reboot") {
+			rebootRequired++
 		}
 	}
 	
@@ -63,7 +68,13 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
 		scheme := "http"
-		if r.TLS != nil { scheme = "https" }
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			if strings.ToLower(proto) == "https" {
+				scheme = "https"
+			}
+		} else if r.TLS != nil {
+			scheme = "https"
+		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 
@@ -82,7 +93,7 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFiles("server/static/setup.html")
+	tmpl, err := template.ParseFS(static.FS, "setup.html")
 	if err != nil {
 		http.Error(w, "Failed to load setup page", http.StatusInternalServerError)
 		return
@@ -90,7 +101,13 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
 		scheme := "http"
-		if r.TLS != nil { scheme = "https" }
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			if strings.ToLower(proto) == "https" {
+				scheme = "https"
+			}
+		} else if r.TLS != nil {
+			scheme = "https"
+		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 	data := struct { BaseURL string }{ BaseURL: baseURL }
@@ -194,7 +211,11 @@ func HandleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 
 	fmt.Fprintf(w, "data: %s\n\n", `{"message": "System stream initialized", "level": "system"}`)
-	w.(http.Flusher).Flush()
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	} else {
+		log.Println("ResponseWriter does not support flushing")
+	}
 
 	<-r.Context().Done()
 }

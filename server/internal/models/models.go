@@ -20,6 +20,7 @@ type HeartbeatPayload struct {
 	MacAddress   string `json:"mac_address"`
 	Hostname     string `json:"hostname"`
 	OS           string `json:"os"`
+	OSVersion    string `json:"os_version"`
 	Kernel       string `json:"kernel"`
 	RebootNeeded bool   `json:"reboot_needed"`
 }

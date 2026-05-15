@@ -1,10 +1,10 @@
 //go:build !windows
-// +build !windows
 
 package updater
 
 import (
 	"fmt"
+	"math"
 	"syscall"
 )
 
@@ -16,7 +16,13 @@ func CheckDiskSpace(path string, minBytes uint64) error {
 		return fmt.Errorf("failed to check disk space: %v", err)
 	}
 
-	available := stat.Bavail * uint64(stat.Bsize)
+	var available uint64
+	if stat.Bsize > 0 && stat.Bavail > math.MaxUint64/uint64(stat.Bsize) {
+		available = math.MaxUint64
+	} else {
+		available = stat.Bavail * uint64(stat.Bsize)
+	}
+
 	if available < minBytes {
 		return fmt.Errorf("insufficient disk space: required %d bytes, available %d bytes", minBytes, available)
 	}

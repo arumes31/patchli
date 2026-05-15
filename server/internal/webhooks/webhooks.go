@@ -66,7 +66,11 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 func NotifySlack(webhookURL string, msg string) {
 	if !isValidURL(webhookURL) { return }
 	payload := map[string]string{"text": msg}
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Slack webhook error: %v", err)
+		return
+	}
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Slack webhook error: %v", err)
@@ -80,7 +84,11 @@ func NotifySlack(webhookURL string, msg string) {
 func NotifyDiscord(webhookURL string, msg string) {
 	if !isValidURL(webhookURL) { return }
 	payload := map[string]string{"content": msg}
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Discord webhook error: %v", err)
+		return
+	}
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Discord webhook error: %v", err)
@@ -100,7 +108,11 @@ func NotifyTeams(webhookURL string, title, text string) {
 		"summary":    title,
 		"text":       text,
 	}
-	data, _ := json.Marshal(payload)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Teams webhook error: %v", err)
+		return
+	}
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Teams webhook error: %v", err)

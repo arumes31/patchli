@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/patchli/server/internal/api"
 	"github.com/patchli/server/internal/db"
@@ -36,7 +41,13 @@ func main() {
 	})
 
 	// Static files
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("server/static"))))
+	exe, _ := os.Executable()
+	basePath := filepath.Dir(exe)
+	if _, err := os.Stat(filepath.Join(basePath, "server/static/index.html")); os.IsNotExist(err) {
+		basePath = "."
+	}
+
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(basePath, "server/static")))))
 
 	// Dashboard UI
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -44,7 +55,7 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeFile(w, r, "server/static/index.html")
+		http.ServeFile(w, r, filepath.Join(basePath, "server/static/index.html"))
 	})
 	mux.HandleFunc("/setup", api.ServeSetupUI)
 
@@ -59,8 +70,33 @@ func main() {
 	port := os.Getenv("PORT")
 	if port == "" { port = "8080" }
 
-	log.Printf("Server listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
 	}
+
+	go func() {
+		log.Printf("Server listening on :%s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	log.Println("Shutting down server gracefully...")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool.Stop()
+	if db.DB != nil {
+		_ = db.DB.Close()
+	}
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	log.Println("Server stopped")
 }

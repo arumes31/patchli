@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/coreos/go-systemd/v22/daemon"
@@ -315,7 +316,11 @@ func executeCommand(pm updater.PackageManager, cmd CommandPayload) {
 }
 
 var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResult {
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:8080/download/agent", nil)
+	serverURL := os.Getenv("SERVER_URL")
+	if serverURL == "" {
+		serverURL = "localhost:8080"
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://"+serverURL+"/download/agent", nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
@@ -348,14 +353,47 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
+	if err := verifySignature(tmpName); err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("signature verification failed: %v", err)}
+	}
+
 	if err := os.Chmod(tmpName, 0755); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
-	if err := os.Rename(tmpName, "/usr/local/bin/patchli-agent"); err != nil {
+	agentPath := "/usr/local/bin/patchli-agent"
+	if runtime.GOOS == "windows" {
+		exe, err := os.Executable()
+		if err == nil {
+			agentPath = exe
+		}
+	}
+	
+	backupPath := agentPath + ".bak." + fmt.Sprint(time.Now().Unix())
+	if err := os.Rename(agentPath, backupPath); err != nil && !os.IsNotExist(err) {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
-	out, err := exec.CommandContext(ctx, "systemctl", "restart", "patchli-agent").CombinedOutput()
+	if err := os.Rename(tmpName, agentPath); err != nil {
+		_ = os.Rename(backupPath, agentPath) // Rollback
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+
+	out, err := restartAgent(ctx)
 	return updater.UpdateResult{Success: err == nil, Output: string(out), Error: err}
+}
+
+func verifySignature(filePath string) error {
+	// TODO: implement actual signature verification
+	return nil
+}
+
+func restartAgent(ctx context.Context) ([]byte, error) {
+	if runtime.GOOS == "windows" {
+		return exec.CommandContext(ctx, "powershell", "Restart-Service", "-Name", "patchli-agent").CombinedOutput()
+	}
+	if _, err := os.Stat("/run/openrc"); err == nil {
+		return exec.CommandContext(ctx, "rc-service", "patchli-agent", "restart").CombinedOutput()
+	}
+	return exec.CommandContext(ctx, "systemctl", "restart", "patchli-agent").CombinedOutput()
 }

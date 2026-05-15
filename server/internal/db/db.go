@@ -89,7 +89,7 @@ func UpdateNodeStatus(mac string, hostname string, osName string, osVersion stri
 // IsJobRunning checks if a job is still in 'running' state.
 func IsJobRunning(jobID string) (bool, error) {
 	var status string
-	err := DB.QueryRow("SELECT status FROM audit_logs WHERE job_id = $1", jobID).Scan(&status)
+	err := DB.QueryRow("SELECT status FROM audit_logs WHERE job_id = $1 ORDER BY created_at DESC LIMIT 1", jobID).Scan(&status)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}

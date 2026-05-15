@@ -86,8 +86,10 @@ func (m *AptManager) PreFlightCheck(ctx context.Context) error {
 
 	// 2. Process lock detection
 	if _, err := statFunc("/var/lib/dpkg/lock-frontend"); err == nil {
-		cmd := execCommandContext(ctx, "pgrep", "-f", "apt|dpkg")
-		if err := cmd.Run(); err == nil {
+		if err := execCommandContext(ctx, "pgrep", "-x", "apt-get").Run(); err == nil {
+			return fmt.Errorf("package manager is currently locked or in use")
+		}
+		if err := execCommandContext(ctx, "pgrep", "-x", "dpkg").Run(); err == nil {
 			return fmt.Errorf("package manager is currently locked or in use")
 		}
 	}

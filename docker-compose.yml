@@ -8,9 +8,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - DB_URL=postgres://postgres:password@postgres:5432/patchli?sslmode=disable
+      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/patchli?sslmode=disable
       - REDIS_URL=redis:6379
-      - JWT_SECRET=supersecretjwtkey123
+      - JWT_SECRET=${JWT_SECRET}
       - BASE_URL=${BASE_URL:-http://localhost:8080}
     depends_on:
       - postgres
@@ -25,7 +25,7 @@ services:
       - "5432:5432"
     environment:
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=patchli
     volumes:
       - ./data/postgres:/var/lib/postgresql/data

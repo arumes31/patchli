@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gorilla/websocket"
 	"github.com/patchli/server/internal/db"
@@ -15,11 +16,30 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		expectedOrigin := "http://" + r.Host
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+			if strings.ToLower(proto) == "https" {
+				expectedOrigin = "https://" + r.Host
+			}
+		} else if r.TLS != nil {
+			expectedOrigin = "https://" + r.Host
+		}
+		if origin != "" && origin != expectedOrigin {
+			return false
+		}
 		return true
 	},
 }
 
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Require Auth
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Upgrade error: %v", err)
@@ -28,6 +48,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	var macAddr string
+	var lastOS string
 
 	for {
 		_, message, err := conn.ReadMessage()
@@ -35,7 +56,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if macAddr != "" {
 				fleet.Registry.Unregister(macAddr)
 				log.Printf("Agent %s disconnected", macAddr)
-				_ = db.UpdateNodeStatus(macAddr, "", "", "", "", "Offline")
+				_ = db.UpdateNodeStatus(macAddr, "", "", lastOS, "", "offline")
 			}
 			break
 		}
@@ -57,9 +78,10 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			macAddr = p.MacAddress
+			lastOS = p.OSVersion
 			fleet.Registry.Register(macAddr, conn, p)
 			
-			_ = db.UpdateNodeStatus(p.MacAddress, p.Hostname, p.OS, "", p.Kernel, "Online")
+			_ = db.UpdateNodeStatus(p.MacAddress, p.Hostname, p.OS, p.OSVersion, p.Kernel, "online")
 
 		case "log":
 			// Handle log payload

@@ -59,7 +59,14 @@ func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
 			if cmd.Process != nil {
 				_ = cmd.Process.Signal(sig)
 			}
-			<-done
+			select {
+			case <-done:
+			case <-time.After(10 * time.Second):
+				log.Printf("Watchdog: Agent did not exit in time, killing.")
+				if cmd.Process != nil {
+					_ = cmd.Process.Kill()
+				}
+			}
 			log.Println("Watchdog exiting cleanly.")
 			return
 		case err := <-done:

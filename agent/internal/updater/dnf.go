@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	
+	"os/exec"
+	"strings"
 )
 
 // DnfManager implements the PackageManager interface for dnf (RHEL/CentOS 8+).
@@ -43,8 +44,30 @@ func (m *DnfManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func (m *DnfManager) RebootRequired() bool {
-	_, err := statFunc("/var/run/reboot-required")
-	return err == nil
+	if _, err := statFunc("/var/run/reboot-required"); err == nil {
+		return true
+	}
+	
+	cmd := execCommand("needs-restarting", "-r")
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return true
+		}
+	}
+	
+	unameOut, err := execCommand("uname", "-r").Output()
+	if err == nil {
+		runningKernel := strings.TrimSpace(string(unameOut))
+		rpmOut, err := execCommand("rpm", "-q", "--last", "kernel").Output()
+		if err == nil {
+			installedKernel := strings.TrimSpace(string(rpmOut))
+			if !strings.Contains(installedKernel, runningKernel) {
+				return true
+			}
+		}
+	}
+	
+	return false
 }
 
 func (m *DnfManager) PreFlightCheck(ctx context.Context) error {

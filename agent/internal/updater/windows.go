@@ -5,6 +5,7 @@ package updater
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 )
 
@@ -29,18 +30,25 @@ $SearchResult.Updates.Count
 
 func (m *WindowsManager) ApplyUpdates(ctx context.Context, packages []string) (UpdateResult, error) {
 	script := `
+param([string]$PackagesJson)
 if (!(Get-Module -ListAvailable -Name PSWindowsUpdate)) {
-	Install-Module -Name PSWindowsUpdate -Force -SkipPublisherCheck -AcceptLicense
+	$mod = Find-Module -Name PSWindowsUpdate -Repository PSGallery
+	if ($mod.Author -match "Michal Gajda") {
+		Install-Module -Name PSWindowsUpdate -Repository PSGallery -Force -AcceptLicense
+	} else {
+		throw "Untrusted PSWindowsUpdate author"
+	}
 }
 Import-Module PSWindowsUpdate
-$pkgNames = @("` + strings.Join(packages, `", "`) + `")
-if ($pkgNames.Length -gt 0 -and $pkgNames[0] -ne "") {
+$pkgNames = $PackagesJson | ConvertFrom-Json
+if ($pkgNames.Count -gt 0 -and $pkgNames[0] -ne "") {
 	Install-WindowsUpdate -Title $pkgNames -AcceptAll -IgnoreReboot
 } else {
 	Install-WindowsUpdate -AcceptAll -IgnoreReboot
 }
 `
-	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script)
+	pkgBytes, _ := json.Marshal(packages)
+	cmd := execCommandContext(ctx, "powershell", "-NoProfile", "-Command", script, "-PackagesJson", string(pkgBytes))
 	out, err := cmd.CombinedOutput()
 	return UpdateResult{Success: err == nil, Output: string(out), Error: err}, err
 }
