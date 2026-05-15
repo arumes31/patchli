@@ -71,8 +71,9 @@ func main() {
 	if port == "" { port = "8080" }
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: mux,
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 15 * time.Second,
 	}
 
 	go func() {
