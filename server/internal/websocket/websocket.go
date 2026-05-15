@@ -19,7 +19,7 @@ var jwtSecret []byte
 
 func init() {
 	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
+	if secret == "" || secret == "CHANGE_ME_REQUIRED" {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
 	jwtSecret = []byte(secret)

@@ -66,9 +66,22 @@ func (m *PacmanManager) RebootRequired() bool {
 			parts := strings.Split(installedStr, " ")
 			if len(parts) >= 2 {
 				installedKernel := parts[1]
-				normRunning := strings.ReplaceAll(strings.ReplaceAll(runningKernel, "-", ""), ".", "")
-				normInstalled := strings.ReplaceAll(strings.ReplaceAll(installedKernel, "-", ""), ".", "")
-				if !strings.Contains(normInstalled, normRunning) && !strings.Contains(normRunning, normInstalled) {
+				
+				extractVersion := func(v string) string {
+					f := func(c rune) bool {
+						return c < '0' || c > '9'
+					}
+					p := strings.FieldsFunc(v, f)
+					if len(p) > 3 {
+						p = p[:3]
+					}
+					return strings.Join(p, ".")
+				}
+				
+				normRunning := extractVersion(runningKernel)
+				normInstalled := extractVersion(installedKernel)
+				
+				if normRunning != "" && normInstalled != "" && normRunning != normInstalled {
 					return true
 				}
 			}

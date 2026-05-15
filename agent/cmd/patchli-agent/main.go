@@ -432,9 +432,9 @@ func restartAgent(ctx context.Context) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to find powershell.exe or sc.exe: %v", err)
 		}
-		helper := exec.Command(psPath, "Start-Sleep -Seconds 2; Start-Service -Name patchli-agent")
+		helper := exec.Command(psPath, "-Command", "Start-Sleep -Seconds 2; Start-Service -Name patchli-agent")
 		_ = helper.Start()
-		_ = exec.CommandContext(ctx, psPath, "Stop-Service", "-Name", "patchli-agent").Run()
+		_ = exec.CommandContext(ctx, psPath, "-Command", "Stop-Service -Name patchli-agent").Run()
 		return []byte("Restarting via powershell.exe helper"), nil
 	}
 	if _, err := os.Stat("/run/openrc"); err == nil {
