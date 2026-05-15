@@ -92,6 +92,7 @@ sequenceDiagram
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `SERVER_URL` | Host and port of the Patchli Control Plane | `localhost:8080` |
+| `TRUSTED_PUB_KEY` | Ed25519 public key (Base64) to verify downloaded binaries during self-update | - |
 
 ---
 
@@ -129,6 +130,18 @@ cd agent && go run ./cmd/patchli-agent/main.go
 ### Testing & Quality
 We maintain a strict quality standard with **80% code coverage** enforcement.
 
+```bash
+# Run all tests
+go test ./... -cover
+
+# Run security scan
+gosec ./...
+```
+
+---
+
+## 📄 License
+Patchli is released under the [MIT License](LICENSE).
 ```bash
 # Run all tests
 go test ./... -cover
