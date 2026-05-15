@@ -10,9 +10,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/patchli/server/internal/db"
-	"github.com/patchli/server/internal/fleet"
-	"github.com/patchli/server/internal/models"
+	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/patchli/server/internal/fleet"
+	"github.com/arumes31/patchli/server/internal/models"
 )
 
 var jwtSecret []byte

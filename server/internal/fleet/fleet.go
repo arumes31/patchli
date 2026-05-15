@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/patchli/server/internal/models"
+	"github.com/arumes31/patchli/server/internal/models"
 )
 
 type AgentManager struct {

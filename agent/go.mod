@@ -1,4 +1,4 @@
-module github.com/patchli/agent
+module github.com/arumes31/patchli/agent
 
 go 1.26.3
 

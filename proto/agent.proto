@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package patchli;
 
-option go_package = "github.com/patchli/server/proto";
+option go_package = "github.com/arumes31/patchli/server/proto";
 
 service AgentService {
   // Bi-directional stream for continuous communication (similar to WebSockets)

@@ -19,9 +19,9 @@ import (
 
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/gorilla/websocket"
-	"github.com/patchli/agent/internal/identity"
-	"github.com/patchli/agent/internal/state"
-	"github.com/patchli/agent/internal/updater"
+	"github.com/arumes31/patchli/agent/internal/identity"
+	"github.com/arumes31/patchli/agent/internal/state"
+	"github.com/arumes31/patchli/agent/internal/updater"
 )
 
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")

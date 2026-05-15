@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/patchli/server/internal/api"
-	"github.com/patchli/server/internal/db"
-	"github.com/patchli/server/internal/orchestration"
-	"github.com/patchli/server/internal/websocket"
-	"github.com/patchli/server/static"
+	"github.com/arumes31/patchli/server/internal/api"
+	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/patchli/server/internal/orchestration"
+	"github.com/arumes31/patchli/server/internal/websocket"
+	"github.com/arumes31/patchli/server/static"
 )
 
 func main() {
@@ -55,7 +55,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html")
-		w.Write(data)
+		_, _ = w.Write(data)
 	})
 	mux.HandleFunc("/setup", api.ServeSetupUI)
 

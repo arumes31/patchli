@@ -5,10 +5,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/patchli/server/internal/db"
-	"github.com/patchli/server/internal/fleet"
-	"github.com/patchli/server/internal/models"
-	"github.com/patchli/server/internal/webhooks"
+	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/patchli/server/internal/fleet"
+	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/arumes31/patchli/server/internal/webhooks"
 )
 
 type WorkerPool struct {

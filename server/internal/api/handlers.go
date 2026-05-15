@@ -10,9 +10,9 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/patchli/server/internal/auth"
-	"github.com/patchli/server/internal/fleet"
-	"github.com/patchli/server/static"
+	"github.com/arumes31/patchli/server/internal/auth"
+	"github.com/arumes31/patchli/server/internal/fleet"
+	"github.com/arumes31/patchli/server/static"
 )
 
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
