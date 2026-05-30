@@ -15,7 +15,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.25'
           cache: true
 
       - name: golangci-lint (Server)
@@ -40,7 +40,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.25'
 
       - name: Install Tools
         run: |
@@ -71,11 +71,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.25'
 
       - name: Test Server with Coverage
         run: |
-          go test -v -coverprofile=coverage.out ./...
+          export REGISTRATION_SECRET=testregsecret1234 JWT_SECRET=atleast16charslongsecret && go test -v -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out -o=coverage.out
           # Feature 85: Enforce 80% coverage
           total_coverage=$(grep total coverage.out | awk '{print $3}' | sed 's/%//')
@@ -84,7 +84,7 @@ jobs:
         working-directory: server
 
       - name: Test Agent
-        run: go test -v ./...
+        run: export REGISTRATION_SECRET=testregsecret1234 JWT_SECRET=atleast16charslongsecret && go test -v ./...
         working-directory: agent
 
   chaos_test:
@@ -108,7 +108,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.25'
 
       - name: Install Pumba (Chaos tool)
         run: |
@@ -151,10 +151,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.25'
 
       - name: Fuzz WebSocket Parser
-        run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
+        run: export REGISTRATION_SECRET=testregsecret1234 JWT_SECRET=atleast16charslongsecret && go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
         working-directory: server
 
   deadlock_detection:
@@ -165,8 +165,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.25'
 
       - name: Run Tests with Deadlock Detector
-        run: go test -v -race ./...
+        run: export REGISTRATION_SECRET=testregsecret1234 JWT_SECRET=atleast16charslongsecret && go test -v -race ./...
         working-directory: server
