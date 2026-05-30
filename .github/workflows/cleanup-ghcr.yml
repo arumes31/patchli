@@ -1,0 +1,42 @@
+name: Cleanup GHCR Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_versions_to_keep:
+        description: 'Minimum number of versions to keep'
+        default: '10'
+        required: true
+      delete_untagged:
+        description: 'Delete untagged versions'
+        type: boolean
+        default: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Extract repository name
+        shell: bash
+        run: echo "REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)" >> $GITHUB_ENV
+
+      - name: Cleanup Server images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: '${{ env.REPO_NAME }}/server'
+          package-type: 'container'
+          min-versions-to-keep: ${{ github.event.inputs.min_versions_to_keep }}
+          delete-only-untagged-versions: ${{ github.event.inputs.delete_untagged }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup Agent images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: '${{ env.REPO_NAME }}/agent'
+          package-type: 'container'
+          min-versions-to-keep: ${{ github.event.inputs.min_versions_to_keep }}
+          delete-only-untagged-versions: ${{ github.event.inputs.delete_untagged }}
+          token: ${{ secrets.GITHUB_TOKEN }}

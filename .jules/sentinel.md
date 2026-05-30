@@ -1,0 +1,4 @@
+## 2026-05-30 - Command Injection in Setup Script Generation
+**Vulnerability:** The `HandleSetup` API endpoint constructed bash/powershell installation scripts by passing the unvalidated query parameter `group` directly into the script template via `fmt.Sprintf` (e.g., `GROUP="%s"`). This allowed unauthenticated command injection when a user executes the setup command using `curl ... | bash`.
+**Learning:** Security context transitions matter. An HTTP query parameter seems harmless in Go code, but becomes highly dangerous when injected directly into a shell execution context on the client side.
+**Prevention:** Strictly validate and sanitize any user input intended for execution contexts using regular expressions (e.g., `^[a-zA-Z0-9_-]+$`) to ensure it contains only safe characters. Additionally, the `ServeSetupUI` function was updated from `text/template` to `html/template` to prevent Reflected XSS.
