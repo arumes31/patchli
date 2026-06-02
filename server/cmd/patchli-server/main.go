@@ -11,6 +11,7 @@ import (
 
 	"github.com/arumes31/patchli/server/internal/api"
 	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/patchli/server/internal/fleet"
 	"github.com/arumes31/patchli/server/internal/orchestration"
 	"github.com/arumes31/patchli/server/internal/websocket"
 	"github.com/arumes31/patchli/server/static"
@@ -23,6 +24,14 @@ func main() {
 	pool := orchestration.NewWorkerPool(10)
 	pool.Start()
 	log.Println("Worker pool started.")
+
+	// Start Fleet Pruning
+	go func() {
+		for {
+			time.Sleep(1 * time.Minute)
+			fleet.Registry.PruneStaleAgents(5 * time.Minute)
+		}
+	}()
 
 	dbURL := os.Getenv("DB_URL")
 	if dbURL != "" {
@@ -68,7 +77,9 @@ func main() {
 	mux.HandleFunc("/ws", websocket.HandleWebSocket)
 
 	port := os.Getenv("PORT")
-	if port == "" { port = "8080" }
+	if port == "" {
+		port = "8080"
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + port,
