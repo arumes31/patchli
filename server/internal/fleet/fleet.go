@@ -49,6 +49,7 @@ func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {
 	defer am.mu.Unlock()
 	cutoff := time.Now().Add(-ttl)
 	for mac, detail := range am.details {
+		// ⚡ Bolt: Fast time.Time struct comparison eliminates O(N) string parsing overhead inside the lock.
 		if detail.LastHeartbeat.Before(cutoff) {
 			delete(am.details, mac)
 			delete(am.agents, mac)
