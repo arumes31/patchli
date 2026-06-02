@@ -1,0 +1,172 @@
+name: CI - Security & Quality
+
+on:
+  push:
+    branches: [ main, v2_test ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    name: Linting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: golangci-lint (Server)
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: server
+          args: --timeout=5m
+
+      - name: golangci-lint (Agent)
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: latest
+          working-directory: agent
+          args: --timeout=5m
+
+  security:
+    name: Security Scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install Tools
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run Gosec (Server)
+        run: gosec ./...
+        working-directory: server
+
+      - name: Run Gosec (Agent)
+        run: gosec ./...
+        working-directory: agent
+
+      - name: Run Govulncheck (Server)
+        run: govulncheck ./...
+        working-directory: server
+
+      - name: Run Govulncheck (Agent)
+        run: govulncheck ./...
+        working-directory: agent
+
+  test:
+    name: Unit Tests & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Test Server with Coverage
+        run: |
+          go test -v -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out -o=coverage.out
+          # Feature 85: Enforce 80% coverage
+          total_coverage=$(grep total coverage.out | awk '{print $3}' | sed 's/%//')
+          echo "Total Coverage: $total_coverage%"
+          awk -v cov="$total_coverage" 'BEGIN { if (cov < 80.0) { print "Coverage is " cov "%. Must be >= 80.0%"; exit 1 } }'
+        working-directory: server
+
+      - name: Test Agent
+        run: go test -v ./...
+        working-directory: agent
+
+  chaos_test:
+    name: Chaos Engineering Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: patchli
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Install Pumba (Chaos tool)
+        run: |
+          curl -sL https://github.com/alexei-led/pumba/releases/download/0.9.0/pumba_linux_amd64 -o pumba
+          chmod +x pumba
+          sudo mv pumba /usr/local/bin/
+
+      - name: Build Server
+        run: go build -o server_bin ./cmd/patchli-server/main.go
+        working-directory: server
+
+      - name: Run Server in Background
+        run: |
+          ./server/server_bin &
+          sleep 5
+        env:
+          DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
+          REDIS_URL: localhost:6379
+          JWT_SECRET: "atleast16charslongsecret"
+
+      - name: Chaos Test - Kill Redis
+        run: |
+          for i in {1..5}; do curl -f http://localhost:8080/health && break || sleep 2; done
+          sudo iptables -A INPUT -p tcp --dport 6379 -j DROP
+          sleep 2
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Expected degraded but got $STATUS"
+            exit 1
+          fi
+          sudo iptables -D INPUT -p tcp --dport 6379 -j DROP
+          sleep 2
+          curl -f http://localhost:8080/health || exit 1
+
+  fuzz_test:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Fuzz WebSocket Parser
+        run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
+        working-directory: server
+
+  deadlock_detection:
+    name: Deadlock Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Run Tests with Deadlock Detector
+        run: go test -v -race ./...
+        working-directory: server
