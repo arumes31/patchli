@@ -1,6 +1,7 @@
 package state
 
 import (
+	"runtime"
 	"os"
 	"path/filepath"
 	"testing"
@@ -77,7 +78,11 @@ func TestSaveStateError(t *testing.T) {
 	// Test SaveState with invalid path
 	oldStateFile := stateFile
 	// On Windows, a path with invalid characters
-	stateFile = "Z:\\invalid\\path\\?:|/state.json"
+	if runtime.GOOS == "windows" {
+			stateFile = "Z:\\invalid\\path\\?:|/state.json"
+		} else {
+			stateFile = "/proc/invalid/path/state.json"
+		}
 	defer func() { stateFile = oldStateFile }()
 
 	state := State{JobID: "test"}

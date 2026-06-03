@@ -13,6 +13,10 @@ import (
 var idFile string
 
 func init() {
+	if envDir := os.Getenv("PATCHLI_CONFIG_DIR"); envDir != "" {
+		idFile = filepath.Join(envDir, "node_id")
+		return
+	}
 	if runtime.GOOS == "windows" {
 		idFile = filepath.Join(os.Getenv("PROGRAMDATA"), "Patchli", "node_id")
 	} else {

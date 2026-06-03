@@ -77,6 +77,8 @@ jobs:
         env:
           REGISTRATION_SECRET: testsecret
           JWT_SECRET: atleast16charslongsecret
+          PATCHLI_CONFIG_DIR: /tmp/patchli-config
+          PATCHLI_STATE_DIR: /tmp/patchli-state
         run: |
           go test -v -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out -o=coverage.out
@@ -90,6 +92,8 @@ jobs:
         env:
           REGISTRATION_SECRET: testsecret
           JWT_SECRET: atleast16charslongsecret
+          PATCHLI_CONFIG_DIR: /tmp/patchli-config
+          PATCHLI_STATE_DIR: /tmp/patchli-state
         run: go test -v ./...
         working-directory: agent
 
@@ -164,6 +168,8 @@ jobs:
         env:
           REGISTRATION_SECRET: testsecret
           JWT_SECRET: atleast16charslongsecret
+          PATCHLI_CONFIG_DIR: /tmp/patchli-config
+          PATCHLI_STATE_DIR: /tmp/patchli-state
         run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
         working-directory: server
 
@@ -181,5 +187,7 @@ jobs:
         env:
           REGISTRATION_SECRET: testsecret
           JWT_SECRET: atleast16charslongsecret
+          PATCHLI_CONFIG_DIR: /tmp/patchli-config
+          PATCHLI_STATE_DIR: /tmp/patchli-state
         run: go test -v -race ./...
         working-directory: server
