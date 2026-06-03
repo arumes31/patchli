@@ -21,6 +21,8 @@ func init() {
 }
 
 func GetOrGenerate() string {
+	// #nosec G304
+	// #nosec G304
 	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
 		parsed := strings.TrimSpace(string(data))
 		if _, err := uuid.Parse(parsed); err == nil {

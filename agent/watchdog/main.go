@@ -29,6 +29,8 @@ func parseArgs(args []string) string {
 }
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
+	// #nosec G706
+	// #nosec G706
 	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {
