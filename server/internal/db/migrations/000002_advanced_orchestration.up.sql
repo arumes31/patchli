@@ -1,5 +1,14 @@
 -- 000002_advanced_orchestration.up.sql
 -- Refactor audit_logs to use partitioning
+
+-- Safely rename sequence if it exists to avoid conflict and allow setval later
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'audit_logs_id_seq') THEN
+        ALTER SEQUENCE audit_logs_id_seq RENAME TO audit_logs_old_backup_id_seq;
+    END IF;
+END $$;
+
 ALTER TABLE audit_logs RENAME TO audit_logs_old_backup;
 
 CREATE TABLE audit_logs (
@@ -45,6 +54,7 @@ SELECT id, job_id, node_id, action, status, output, created_at FROM audit_logs_o
 
 DROP TABLE audit_logs_old_backup;
 
+-- The new table will have created a sequence named audit_logs_id_seq
 SELECT setval('audit_logs_id_seq', COALESCE((SELECT MAX(id)+1 FROM audit_logs), 1), false);
 
 -- Orchestration Enhancements
