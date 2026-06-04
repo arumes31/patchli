@@ -1,0 +1,2 @@
+- **Test Isolation for fleet.Registry:** Added `Reset()` and `SetStatus()` methods to `AgentManager` in `server/internal/fleet/fleet.go` to allow for clean test states and status mocking without exposing private fields.
+- **Status Matching in HandleStats:** Changed exact string comparison for "online" status to `strings.Contains` to correctly account for nodes with composite statuses like "Online, Reboot Required".
