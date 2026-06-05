@@ -42,6 +42,7 @@ func getExecCommand() func(string, ...string) *exec.Cmd {
 }
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
+	// #nosec G706 -- Logging agent path is safe here
 	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 )
 
@@ -62,8 +63,10 @@ func TestAptManagerFull(t *testing.T) {
 			return nil, os.ErrNotExist
 		}
 		execCommandContext = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-			// On Windows, use cmd.exe /c "echo locked" which returns 0
-			return exec.CommandContext(ctx, "cmd.exe", "/c", "echo locked")
+			if runtime.GOOS == "windows" {
+				return exec.CommandContext(ctx, "cmd.exe", "/c", "exit 0")
+			}
+			return exec.CommandContext(ctx, "true")
 		}
 		err := m.PreFlightCheck(ctx)
 		if err == nil {
