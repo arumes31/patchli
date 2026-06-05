@@ -21,7 +21,7 @@ func init() {
 	secret := os.Getenv("JWT_SECRET")
 	if os.Getenv("CI") == "true" || os.Getenv("GITHUB_ACTIONS") == "true" {
 		if len(secret) < 16 {
-			secret = "atleast16charslongsecret"
+			secret = "atleast16charslongsecret" // #nosec G101
 		}
 	} else if secret == "" || len(secret) < 16 {
 		log.Fatal("JWT_SECRET environment variable is required and must be at least 16 characters")

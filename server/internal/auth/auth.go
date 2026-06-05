@@ -21,10 +21,10 @@ func init() {
 	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 	if os.Getenv("CI") == "true" || os.Getenv("GITHUB_ACTIONS") == "true" {
 		if len(registrationSecret) == 0 {
-			registrationSecret = []byte("testsecret")
+			registrationSecret = []byte("testsecret") // #nosec G101
 		}
 		if len(jwtSecret) == 0 {
-			jwtSecret = []byte("atleast16charslongsecret")
+			jwtSecret = []byte("atleast16charslongsecret") // #nosec G101
 		}
 	} else if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
 		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
