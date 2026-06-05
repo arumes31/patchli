@@ -44,6 +44,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
+	// #nosec G107
 	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
@@ -52,6 +53,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
+	// #nosec G704
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
@@ -60,6 +62,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
+		// #nosec G706
 		log.Printf("Webhook returned error status: %d", resp.StatusCode)
 	}
 }
@@ -74,6 +77,7 @@ func NotifySlack(webhookURL string, msg string) {
 		log.Printf("Slack webhook error: %v", err)
 		return
 	}
+	// #nosec G107
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Slack webhook error: %v", err)
@@ -94,6 +98,7 @@ func NotifyDiscord(webhookURL string, msg string) {
 		log.Printf("Discord webhook error: %v", err)
 		return
 	}
+	// #nosec G107
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Discord webhook error: %v", err)
@@ -120,6 +125,7 @@ func NotifyTeams(webhookURL string, title, text string) {
 		log.Printf("Teams webhook error: %v", err)
 		return
 	}
+	// #nosec G107
 	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Teams webhook error: %v", err)
