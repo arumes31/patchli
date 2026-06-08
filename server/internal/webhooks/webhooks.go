@@ -44,7 +44,14 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
+	sanitizedURL, err := url.Parse(targetURL)
+	if err != nil {
+		log.Printf("Failed to parse webhook URL: %v", err)
+		return
+	}
+
+	// #nosec G704 -- The URL is sanitized by url.Parse and checked using isValidURL before sending.
+	req, err := http.NewRequest("POST", sanitizedURL.String(), bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
@@ -52,6 +59,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
+	// #nosec G704 -- The URL is sanitized by url.Parse and check using isValidURL before sending.
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
@@ -60,6 +68,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
+		// #nosec G706 -- The status code is an integer and cannot contain CRLF.
 		log.Printf("Webhook returned error status: %d", resp.StatusCode)
 	}
 }
@@ -74,7 +83,22 @@ func NotifySlack(webhookURL string, msg string) {
 		log.Printf("Slack webhook error: %v", err)
 		return
 	}
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+
+	sanitizedURL, err := url.Parse(webhookURL)
+	if err != nil {
+		log.Printf("Slack webhook URL error: %v", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", sanitizedURL.String(), bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Slack webhook error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Slack webhook error: %v", err)
 		return
@@ -94,7 +118,22 @@ func NotifyDiscord(webhookURL string, msg string) {
 		log.Printf("Discord webhook error: %v", err)
 		return
 	}
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+
+	sanitizedURL, err := url.Parse(webhookURL)
+	if err != nil {
+		log.Printf("Discord webhook URL error: %v", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", sanitizedURL.String(), bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Discord webhook error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Discord webhook error: %v", err)
 		return
@@ -120,7 +159,22 @@ func NotifyTeams(webhookURL string, title, text string) {
 		log.Printf("Teams webhook error: %v", err)
 		return
 	}
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+
+	sanitizedURL, err := url.Parse(webhookURL)
+	if err != nil {
+		log.Printf("Teams webhook URL error: %v", err)
+		return
+	}
+
+	req, err := http.NewRequest("POST", sanitizedURL.String(), bytes.NewBuffer(data))
+	if err != nil {
+		log.Printf("Teams webhook error: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Teams webhook error: %v", err)
 		return

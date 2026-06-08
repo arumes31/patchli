@@ -77,6 +77,7 @@ func main() {
 	}
 
 	go func() {
+		// #nosec G706 -- Ignore gosec G706 for port since it's controlled via env or default
 		log.Printf("Server listening on :%s", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)

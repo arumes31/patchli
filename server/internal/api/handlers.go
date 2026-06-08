@@ -28,12 +28,10 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 	online := 0
 	rebootRequired := 0
 	for _, n := range nodes {
-		// Cache lowercased status to minimize allocations across multiple case-insensitive checks
-		lowerStatus := strings.ToLower(n.Status)
-		if lowerStatus == "online" {
+		if strings.ToLower(n.Status) == "online" {
 			online++
 		}
-		if strings.Contains(lowerStatus, "reboot") {
+		if strings.Contains(strings.ToLower(n.Status), "reboot") {
 			rebootRequired++
 		}
 	}
@@ -44,9 +42,9 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := struct {
-		Vitality int    `json:"vitality"`
-		Immune   string `json:"immune"`
-		Recovery int    `json:"recovery"`
+		Vitality   int    `json:"vitality"`
+		Immune     string `json:"immune"`
+		Recovery   int    `json:"recovery"`
 	}{
 		Vitality: len(nodes),
 		Immune:   compliance,
@@ -60,13 +58,9 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	group := r.URL.Query().Get("group")
-	if group == "" {
-		group = "default"
-	}
+	if group == "" { group = "default" }
 	osType := r.URL.Query().Get("os")
-	if osType == "" {
-		osType = "linux"
-	}
+	if osType == "" { osType = "linux" }
 
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := auth.GenerateRegistrationSignature(group, timestamp)
@@ -116,7 +110,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
-	data := struct{ BaseURL string }{BaseURL: baseURL}
+	data := struct { BaseURL string }{ BaseURL: baseURL }
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Error executing template: %v", err)
 	}
