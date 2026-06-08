@@ -8,19 +8,27 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/gorilla/websocket"
 	"github.com/arumes31/patchli/server/internal/db"
 	"github.com/arumes31/patchli/server/internal/fleet"
 	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 )
 
 var jwtSecret []byte
 
 func init() {
 	secret := os.Getenv("JWT_SECRET")
-	if secret == "" || len(secret) < 16 {
-		log.Fatal("JWT_SECRET environment variable is required and must be at least 16 characters")
+
+	// Allow empty secrets during tests to prevent init panic if not set early enough
+	if os.Getenv("GO_ENV") == "test" || os.Getenv("CI") == "true" {
+		if secret == "" {
+			secret = "atleast16charslongsecret"
+		}
+	} else {
+		if secret == "" || len(secret) < 16 {
+			log.Fatal("JWT_SECRET environment variable is required and must be at least 16 characters")
+		}
 	}
 	jwtSecret = []byte(secret)
 }
@@ -113,5 +121,5 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "log":
 			// Handle log payload
 		}
-		}
-		}
+	}
+}
