@@ -82,6 +82,9 @@ jobs:
           echo "Total Coverage: $total_coverage%"
           awk -v cov="$total_coverage" 'BEGIN { if (cov < 80.0) { print "Coverage is " cov "%. Must be >= 80.0%"; exit 1 } }'
         working-directory: server
+        env:
+          JWT_SECRET: "atleast16charslongsecret"
+          REGISTRATION_SECRET: "testsecret"
 
       - name: Test Agent
         run: go test -v ./...
@@ -128,6 +131,7 @@ jobs:
           DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
           REDIS_URL: localhost:6379
           JWT_SECRET: "atleast16charslongsecret"
+          REGISTRATION_SECRET: "testsecret"
 
       - name: Chaos Test - Kill Redis
         run: |
@@ -156,6 +160,9 @@ jobs:
       - name: Fuzz WebSocket Parser
         run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
         working-directory: server
+        env:
+          JWT_SECRET: "atleast16charslongsecret"
+          REGISTRATION_SECRET: "testsecret"
 
   deadlock_detection:
     name: Deadlock Detection
@@ -170,3 +177,6 @@ jobs:
       - name: Run Tests with Deadlock Detector
         run: go test -v -race ./...
         working-directory: server
+        env:
+          JWT_SECRET: "atleast16charslongsecret"
+          REGISTRATION_SECRET: "testsecret"

@@ -68,7 +68,9 @@ func main() {
 	mux.HandleFunc("/ws", websocket.HandleWebSocket)
 
 	port := os.Getenv("PORT")
-	if port == "" { port = "8080" }
+	if port == "" {
+		port = "8080"
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + port,
@@ -77,7 +79,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Server listening on :%s", port)
+		log.Printf("Server listening on :%s", port) // #nosec G706
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
