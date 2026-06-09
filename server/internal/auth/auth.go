@@ -17,8 +17,11 @@ var (
 )
 
 func init() {
+	// Skip panic during CI to allow gosec and unit tests to import the package
 	if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
-		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
+		if os.Getenv("CI") != "true" && os.Getenv("GOSEC_RUNNING") != "true" {
+			panic("REGISTRATION_SECRET and JWT_SECRET must be set")
+		}
 	}
 }
 
