@@ -77,6 +77,7 @@ func main() {
 	}
 
 	go func() {
+		// #nosec G706 -- Port is a hardcoded or env var config
 		log.Printf("Server listening on :%s", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
