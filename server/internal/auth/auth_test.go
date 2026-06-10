@@ -49,4 +49,40 @@ func TestGenerateAgentJWT(t *testing.T) {
 	if token == "" {
 		t.Error("Generated token is empty")
 	}
+
+	claims, err := ValidateToken(token)
+	if err != nil {
+		t.Fatalf("Failed to validate token: %v", err)
+	}
+	if (*claims)["sub"] != "00:11:22:33:44:55" {
+		t.Errorf("Expected sub claim to be 00:11:22:33:44:55, got %v", (*claims)["sub"])
+	}
+}
+
+func TestGenerateTokenPair(t *testing.T) {
+	mac := "AA:BB:CC:DD:EE:FF"
+	pair, err := GenerateTokenPair(mac)
+	if err != nil {
+		t.Fatalf("Failed to generate token pair: %v", err)
+	}
+
+	if pair.AccessToken == "" || pair.RefreshToken == "" {
+		t.Error("Generated tokens should not be empty")
+	}
+
+	accessClaims, err := ValidateToken(pair.AccessToken)
+	if err != nil {
+		t.Fatalf("Failed to validate access token: %v", err)
+	}
+	if (*accessClaims)["sub"] != mac {
+		t.Errorf("Expected sub claim to be %s, got %v", mac, (*accessClaims)["sub"])
+	}
+
+	refreshClaims, err := ValidateToken(pair.RefreshToken)
+	if err != nil {
+		t.Fatalf("Failed to validate refresh token: %v", err)
+	}
+	if (*refreshClaims)["sub"] != mac {
+		t.Errorf("Expected sub claim to be %s, got %v", mac, (*refreshClaims)["sub"])
+	}
 }

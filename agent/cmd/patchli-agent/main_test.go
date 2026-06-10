@@ -20,7 +20,7 @@ func (m *mockPM) CheckUpdates(ctx context.Context) (updater.UpdateResult, error)
 func (m *mockPM) ApplyUpdates(ctx context.Context, packages []string) (updater.UpdateResult, error) {
 	return updater.UpdateResult{Success: true}, nil
 }
-func (m *mockPM) RebootRequired() bool { return false }
+func (m *mockPM) RebootRequired() bool                     { return false }
 func (m *mockPM) PreFlightCheck(ctx context.Context) error { return nil }
 func (m *mockPM) Cleanup(ctx context.Context) error        { return nil }
 
@@ -41,10 +41,10 @@ func TestGetOrGenerateIdentity(t *testing.T) {
 
 func TestRunAgentTimeout(t *testing.T) {
 	t.Setenv("SERVER_URL", "127.0.0.1:0")
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	
+
 	RunAgent(ctx)
 }
 
@@ -65,12 +65,12 @@ func TestHTTPPolling(t *testing.T) {
 
 	// Strip http:// from server.URL
 	host := server.URL[7:]
-	startHTTPPolling(ctx, host, "test-node", &mockPM{})
+	startHTTPPolling(ctx, host, "test-node", &mockPM{}, nil)
 }
 
 func TestExecuteCommand(t *testing.T) {
 	pm := &mockPM{}
-	
+
 	t.Run("check_updates", func(t *testing.T) {
 		cmd := CommandPayload{Action: "check_updates", ID: "job1"}
 		executeCommand(context.Background(), pm, cmd)
@@ -80,7 +80,7 @@ func TestExecuteCommand(t *testing.T) {
 		cmd := CommandPayload{Action: "apply_updates", ID: "job2"}
 		executeCommand(context.Background(), pm, cmd)
 	})
-	
+
 	t.Run("cleanup", func(t *testing.T) {
 		cmd := CommandPayload{Action: "cleanup", ID: "job3"}
 		executeCommand(context.Background(), pm, cmd)

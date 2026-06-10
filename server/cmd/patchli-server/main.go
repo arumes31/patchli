@@ -64,6 +64,10 @@ func main() {
 	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
 	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
 
+	// Agent Auth
+	mux.HandleFunc("/api/v1/auth/login", api.HandleAgentLogin)
+	mux.HandleFunc("/api/v1/auth/refresh", api.HandleAgentRefresh)
+
 	// WebSocket
 	mux.HandleFunc("/ws", websocket.HandleWebSocket)
 

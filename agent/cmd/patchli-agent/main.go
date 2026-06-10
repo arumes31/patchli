@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -43,6 +44,7 @@ type HeartbeatPayload struct {
 	MacAddress   string `json:"mac_address"`
 	Hostname     string `json:"hostname"`
 	OS           string `json:"os"`
+	OSVersion    string `json:"os_version"`
 	Kernel       string `json:"kernel"`
 	RebootNeeded bool   `json:"reboot_needed"`
 }
@@ -54,6 +56,11 @@ type CommandPayload struct {
 	PrePatchScript     string   `json:"pre_patch_script,omitempty"`
 	PostPatchScript    string   `json:"post_patch_script,omitempty"`
 	HealthCheckCommand string   `json:"health_check_command,omitempty"`
+}
+
+type TokenPair struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 func performSelfDiagnosis() {
@@ -94,6 +101,61 @@ func performSelfDiagnosis() {
 	fmt.Println("Self-diagnosis complete.")
 }
 
+func getTokenFile() string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(os.Getenv("PROGRAMDATA"), "Patchli", "tokens.json")
+	}
+	return "/etc/patchli/tokens.json"
+}
+
+func saveTokens(pair TokenPair) error {
+	data, err := json.Marshal(pair)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(getTokenFile())
+	_ = os.MkdirAll(dir, 0750)
+	return os.WriteFile(getTokenFile(), data, 0600)
+}
+
+func loadTokens() (*TokenPair, error) {
+	data, err := os.ReadFile(getTokenFile())
+	if err != nil {
+		return nil, err
+	}
+	var pair TokenPair
+	if err := json.Unmarshal(data, &pair); err != nil {
+		return nil, err
+	}
+	return &pair, nil
+}
+
+func refreshTokens(ctx context.Context, serverURL, nodeID string, refreshToken string) (*TokenPair, error) {
+	reqBody, _ := json.Marshal(map[string]string{
+		"mac":           nodeID,
+		"refresh_token": refreshToken,
+	})
+
+	req, _ := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("refresh failed: %d", resp.StatusCode)
+	}
+
+	var pair TokenPair
+	if err := json.NewDecoder(resp.Body).Decode(&pair); err != nil {
+		return nil, err
+	}
+	return &pair, nil
+}
+
 func main() {
 	verifyFlag := flag.Bool("verify", false, "Perform self-diagnosis and exit")
 	flag.Parse()
@@ -122,7 +184,6 @@ func RunAgent(ctx context.Context) {
 	lastState, _ := state.LoadState()
 	if lastState != nil && lastState.Status == "running" {
 		log.Printf("RECOVERY: Detected interrupted job %s. Reporting to server...", lastState.JobID)
-		// In a real app, send a recovery notification via WS/Polling
 	}
 
 	serverURL := os.Getenv("SERVER_URL")
@@ -130,29 +191,50 @@ func RunAgent(ctx context.Context) {
 		serverURL = "localhost:8080"
 	}
 
-	u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
-	log.Printf("Connecting to %s", u.String())
+	// Auth: load existing tokens
+	var tokens *TokenPair
+	tokens, _ = loadTokens()
 
-	conn, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
-	if err != nil {
-		log.Printf("WebSocket dial error: %v. Falling back to HTTP Long-Polling...", err)
-		startHTTPPolling(ctx, serverURL, nodeID, pm)
-		return
+	if tokens == nil {
+		log.Println("No tokens found. Agent requires initial registration.")
 	}
-	defer conn.Close()
 
-	go runHeartbeat(ctx, conn, nodeID, pm)
+	connectAndRun := func() error {
+		if tokens == nil {
+			// If no tokens, fall back to HTTP polling for compatibility
+			startHTTPPolling(ctx, serverURL, nodeID, pm, nil)
+			return fmt.Errorf("no tokens available")
+		}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
+		u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
+		header := http.Header{}
+		header.Set("Authorization", "Bearer "+tokens.AccessToken)
+
+		log.Printf("Connecting to %s", u.String())
+		conn, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
+		if err != nil {
+			if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+				log.Println("Unauthorized. Attempting token refresh...")
+				newTokens, err := refreshTokens(ctx, serverURL, nodeID, tokens.RefreshToken)
+				if err == nil {
+					tokens = newTokens
+					_ = saveTokens(*tokens)
+					return fmt.Errorf("retry")
+				}
+			}
+			log.Printf("WebSocket dial error: %v. Falling back to HTTP Long-Polling...", err)
+			startHTTPPolling(ctx, serverURL, nodeID, pm, tokens)
+			return err
+		}
+		defer conn.Close()
+
+		go runHeartbeat(ctx, conn, nodeID, pm)
+
+		for {
 			var wsMsg WSMessage
 			err := conn.ReadJSON(&wsMsg)
 			if err != nil {
-				log.Printf("Read error: %v", err)
-				return
+				return err
 			}
 
 			if wsMsg.Type == MsgTypeCommand {
@@ -166,15 +248,27 @@ func RunAgent(ctx context.Context) {
 			}
 		}
 	}
+
+	for {
+		err := connectAndRun()
+		if err != nil {
+			if err.Error() == "retry" {
+				continue
+			}
+			log.Printf("Connection error: %v. Retrying in 30s...", err)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(30 * time.Second):
+			}
+		}
+	}
 }
 
 func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm updater.PackageManager) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-
-	var lastHostname string
-	var lastRebootNeeded bool
-	var cachedData []byte
 
 	for {
 		select {
@@ -188,22 +282,20 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 				_ = exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
 			}
 
-			if cachedData == nil || hostname != lastHostname || rebootNeeded != lastRebootNeeded {
-				payload := HeartbeatPayload{
-					MacAddress:   nodeID,
-					Hostname:     hostname,
-					RebootNeeded: rebootNeeded,
-				}
-				data, err := json.Marshal(payload)
-				if err != nil {
-					continue
-				}
-				cachedData = data
-				lastHostname = hostname
-				lastRebootNeeded = rebootNeeded
+			payload := HeartbeatPayload{
+				MacAddress:   nodeID,
+				Hostname:     hostname,
+				OS:           runtime.GOOS,
+				OSVersion:    "unknown",
+				Kernel:       "unknown",
+				RebootNeeded: rebootNeeded,
+			}
+			data, err := json.Marshal(payload)
+			if err != nil {
+				continue
 			}
 
-			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: cachedData}
+			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
 			if err := conn.WriteJSON(msg); err != nil {
 				log.Printf("Heartbeat error: %v", err)
 				return
@@ -212,33 +304,28 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 	}
 }
 
-func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater.PackageManager) {
+func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater.PackageManager, tokens *TokenPair) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	client := &http.Client{Timeout: 60 * time.Second}
 
-	var lastHostname string
-	var lastRebootNeeded bool
-	var cachedData []byte
-
 	for {
 		hostname, _ := os.Hostname()
-		rebootNeeded := pm.RebootRequired()
-
-		if cachedData == nil || hostname != lastHostname || rebootNeeded != lastRebootNeeded {
-			hb := HeartbeatPayload{
-				MacAddress:   nodeID,
-				Hostname:     hostname,
-				RebootNeeded: rebootNeeded,
-			}
-			data, _ := json.Marshal(hb)
-			cachedData = data
-			lastHostname = hostname
-			lastRebootNeeded = rebootNeeded
+		hb := HeartbeatPayload{
+			MacAddress:   nodeID,
+			Hostname:     hostname,
+			OS:           runtime.GOOS,
+			OSVersion:    "unknown",
+			Kernel:       "unknown",
+			RebootNeeded: pm.RebootRequired(),
 		}
+		data, _ := json.Marshal(hb)
 
-		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(cachedData))
+		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
 		req.Header.Set("Content-Type", "application/json")
+		if tokens != nil {
+			req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -256,7 +343,15 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 			if err := json.NewDecoder(resp.Body).Decode(&cmd); err == nil && cmd.Action != "" {
 				go executeCommand(ctx, pm, cmd)
 			}
+		} else if resp.StatusCode == http.StatusUnauthorized && tokens != nil {
+			log.Println("Poll Unauthorized. Attempting token refresh...")
+			newTokens, err := refreshTokens(ctx, serverHost, nodeID, tokens.RefreshToken)
+			if err == nil {
+				tokens = newTokens
+				_ = saveTokens(*tokens)
+			}
 		}
+
 		_ = resp.Body.Close()
 		select {
 		case <-ctx.Done():

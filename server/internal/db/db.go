@@ -1,10 +1,13 @@
 package db
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/pgx/v5"
@@ -75,15 +78,15 @@ func UpdateNodeStatus(mac string, hostname string, osName string, osVersion stri
 		return nil
 	}
 	query := `
-		INSERT INTO nodes (mac_address, hostname, os_name, os_version, kernel_version, status, last_heartbeat)
-		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-		ON CONFLICT (mac_address) DO UPDATE SET
-			hostname = EXCLUDED.hostname,
-			os_name = EXCLUDED.os_name,
-			os_version = EXCLUDED.os_version,
-			kernel_version = EXCLUDED.kernel_version,
-			status = EXCLUDED.status,
-			last_heartbeat = CURRENT_TIMESTAMP
+	INSERT INTO nodes (mac_address, hostname, os_name, os_version, kernel_version, status, last_heartbeat)
+	VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
+	ON CONFLICT (mac_address) DO UPDATE SET
+		hostname = EXCLUDED.hostname,
+		os_name = EXCLUDED.os_name,
+		os_version = EXCLUDED.os_version,
+		kernel_version = EXCLUDED.kernel_version,
+		status = EXCLUDED.status,
+		last_heartbeat = CURRENT_TIMESTAMP
 	`
 	_, err := DB.Exec(query, mac, hostname, osName, osVersion, kernel, status)
 	return err
@@ -103,4 +106,48 @@ func IsJobRunning(jobID string) (bool, error) {
 		return false, err
 	}
 	return status == "running", nil
+}
+
+func hashToken(token string) string {
+	h := sha256.New()
+	h.Write([]byte(token))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func StoreRefreshToken(mac, token string, expiresAt time.Time) error {
+	if DB == nil {
+		return nil
+	}
+	hash := hashToken(token)
+	query := "INSERT INTO refresh_tokens (mac_address, token_hash, expires_at) VALUES ($1, $2, $3)"
+	_, err := DB.Exec(query, mac, hash, expiresAt)
+	return err
+}
+
+func VerifyRefreshToken(mac, token string) (bool, error) {
+	if DB == nil {
+		return false, nil
+	}
+	hash := hashToken(token)
+	var exists bool
+	query := "SELECT EXISTS(SELECT 1 FROM refresh_tokens WHERE mac_address = $1 AND token_hash = $2 AND expires_at > CURRENT_TIMESTAMP)"
+	err := DB.QueryRow(query, mac, hash).Scan(&exists)
+	return exists, err
+}
+
+func DeleteRefreshToken(mac, token string) error {
+	if DB == nil {
+		return nil
+	}
+	hash := hashToken(token)
+	_, err := DB.Exec("DELETE FROM refresh_tokens WHERE mac_address = $1 AND token_hash = $2", mac, hash)
+	return err
+}
+
+func DeleteAllRefreshTokens(mac string) error {
+	if DB == nil {
+		return nil
+	}
+	_, err := DB.Exec("DELETE FROM refresh_tokens WHERE mac_address = $1", mac)
+	return err
 }
