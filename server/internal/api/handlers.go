@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -14,6 +15,20 @@ import (
 	"github.com/arumes31/patchli/server/internal/fleet"
 	"github.com/arumes31/patchli/server/static"
 )
+
+var validGroupRegex = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
+
+func isValidGroupName(group string) bool {
+	return validGroupRegex.MatchString(group)
+}
+
+func escapeBash(s string) string {
+	return strings.ReplaceAll(s, "'", "'\\''")
+}
+
+func escapePowerShell(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
 
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
 	nodes := fleet.Registry.GetNodes()
@@ -35,16 +50,16 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 			rebootRequired++
 		}
 	}
-	
+
 	compliance := "0%"
 	if len(nodes) > 0 {
 		compliance = fmt.Sprintf("%d%%", (online * 100 / len(nodes)))
 	}
 
 	stats := struct {
-		Vitality   int    `json:"vitality"`
-		Immune     string `json:"immune"`
-		Recovery   int    `json:"recovery"`
+		Vitality int    `json:"vitality"`
+		Immune   string `json:"immune"`
+		Recovery int    `json:"recovery"`
 	}{
 		Vitality: len(nodes),
 		Immune:   compliance,
@@ -58,13 +73,21 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	group := r.URL.Query().Get("group")
-	if group == "" { group = "default" }
+	if group == "" {
+		group = "default"
+	}
+	if !isValidGroupName(group) {
+		http.Error(w, "Invalid group name", http.StatusBadRequest)
+		return
+	}
 	osType := r.URL.Query().Get("os")
-	if osType == "" { osType = "linux" }
+	if osType == "" {
+		osType = "linux"
+	}
 
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := auth.GenerateRegistrationSignature(group, timestamp)
-	
+
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
 		scheme := "http"
@@ -110,7 +133,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
-	data := struct { BaseURL string }{ BaseURL: baseURL }
+	data := struct{ BaseURL string }{BaseURL: baseURL}
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Error executing template: %v", err)
 	}
@@ -120,10 +143,10 @@ func generateLinuxScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 echo "--- Patchli Agent Setup (Linux) ---"
-GROUP="%s"
-TIMESTAMP="%s"
-SIGNATURE="%s"
-SERVER_URL="%s"
+GROUP='%s'
+TIMESTAMP='%s'
+SIGNATURE='%s'
+SERVER_URL='%s'
 
 echo "1. Creating configuration..."
 mkdir -p /etc/patchli
@@ -152,17 +175,17 @@ EOF
 # systemctl start patchli-agent
 
 echo "SUCCESS: Patchli Agent configured for group: $GROUP"
-`, group, ts, sig, url)
+`, escapeBash(group), escapeBash(ts), escapeBash(sig), escapeBash(url))
 }
 
 func generateAlpineScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
 echo "--- Patchli Agent Setup (Alpine) ---"
-GROUP="%s"
-TIMESTAMP="%s"
-SIGNATURE="%s"
-SERVER_URL="%s"
+GROUP='%s'
+TIMESTAMP='%s'
+SIGNATURE='%s'
+SERVER_URL='%s'
 
 echo "1. Creating configuration..."
 mkdir -p /etc/patchli
@@ -182,16 +205,16 @@ EOF
 chmod +x /etc/init.d/patchli-agent
 
 echo "SUCCESS: Patchli Agent configured for group: $GROUP"
-`, group, ts, sig, url)
+`, escapeBash(group), escapeBash(ts), escapeBash(sig), escapeBash(url))
 }
 
 func generateWindowsScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`$ErrorActionPreference = "Stop"
 Write-Host "--- Patchli Agent Setup (Windows) ---"
-$Group = "%s"
-$Timestamp = "%s"
-$Signature = "%s"
-$ServerUrl = "%s"
+$Group = '%s'
+$Timestamp = '%s'
+$Signature = '%s'
+$ServerUrl = '%s'
 
 Write-Host "1. Creating configuration..."
 $ConfigDir = "C:\ProgramData\Patchli"
@@ -202,7 +225,7 @@ group: $Group
 "@ | Out-File -FilePath "$ConfigDir\config.yaml" -Encoding UTF8
 
 Write-Host "SUCCESS: Patchli Agent configured for group: $Group"
-`, group, ts, sig, url)
+`, escapePowerShell(group), escapePowerShell(ts), escapePowerShell(sig), escapePowerShell(url))
 }
 
 func HandleStream(w http.ResponseWriter, r *http.Request) {

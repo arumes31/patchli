@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -62,7 +63,7 @@ func TestHandleStream(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	
+
 	ctx, cancel := context.WithCancel(req.Context())
 	req = req.WithContext(ctx)
 
@@ -92,8 +93,49 @@ func TestHandleSetup(t *testing.T) {
 		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
 	}
 
-	if !strings.Contains(rr.Body.String(), "GROUP=\"test\"") {
+	if !strings.Contains(rr.Body.String(), "GROUP='test'") {
 		t.Error("Response body should contain group name")
+	}
+}
+
+func TestHandleSetupSecurity(t *testing.T) {
+	tests := []struct {
+		name           string
+		group          string
+		expectedStatus int
+	}{
+		{"valid", "production", http.StatusOK},
+		{"valid-dots", "web.prod.01", http.StatusOK},
+		{"valid-dashes", "web-prod-01", http.StatusOK},
+		{"valid-underscores", "web_prod_01", http.StatusOK},
+		{"invalid-space", "prod web", http.StatusBadRequest},
+		{"invalid-semicolon", "prod; echo vulnerable", http.StatusBadRequest},
+		{"invalid-quote", "prod' injection", http.StatusBadRequest},
+		{"invalid-backtick", "prod` injection", http.StatusBadRequest},
+		{"invalid-dollar", "prod$ injection", http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u, _ := url.Parse("/api/v1/setup")
+			q := u.Query()
+			q.Set("group", tt.group)
+			u.RawQuery = q.Encode()
+
+			req, err := http.NewRequest("GET", u.String(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(HandleSetup)
+
+			handler.ServeHTTP(rr, req)
+
+			if status := rr.Code; status != tt.expectedStatus {
+				t.Errorf("handler returned wrong status code for %s: got %v want %v", tt.group, status, tt.expectedStatus)
+			}
+		})
 	}
 }
 
