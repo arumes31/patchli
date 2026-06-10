@@ -69,19 +69,22 @@ func NotifySlack(webhookURL string, msg string) {
 		return
 	}
 	payload := map[string]string{"text": msg}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("Slack webhook error: %v", err)
-		return
-	}
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Printf("Slack webhook error: %v", err)
-		return
-	}
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	go func() {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("Slack webhook error: %v", err)
+			return
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		if err != nil {
+			log.Printf("Slack webhook error: %v", err)
+			return
+		}
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+	}()
 }
 
 func NotifyDiscord(webhookURL string, msg string) {
@@ -89,19 +92,22 @@ func NotifyDiscord(webhookURL string, msg string) {
 		return
 	}
 	payload := map[string]string{"content": msg}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("Discord webhook error: %v", err)
-		return
-	}
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Printf("Discord webhook error: %v", err)
-		return
-	}
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	go func() {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("Discord webhook error: %v", err)
+			return
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		if err != nil {
+			log.Printf("Discord webhook error: %v", err)
+			return
+		}
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+	}()
 }
 
 func NotifyTeams(webhookURL string, title, text string) {
@@ -109,25 +115,28 @@ func NotifyTeams(webhookURL string, title, text string) {
 		return
 	}
 	payload := map[string]string{
-		"@type":      "MessageCard",
-		"@context":   "http://schema.org/extensions",
+		"@type":    "MessageCard",
+		"@context": "http://schema.org/extensions",
 		"themeColor": "0076D7",
 		"summary":    title,
 		"text":       text,
 	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		log.Printf("Teams webhook error: %v", err)
-		return
-	}
-	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Printf("Teams webhook error: %v", err)
-		return
-	}
-	if resp != nil {
-		defer resp.Body.Close()
-	}
+	go func() {
+		data, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("Teams webhook error: %v", err)
+			return
+		}
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		if err != nil {
+			log.Printf("Teams webhook error: %v", err)
+			return
+		}
+		if resp != nil {
+			defer resp.Body.Close()
+		}
+	}()
 }
 
 func isValidURL(u string) bool {
@@ -143,7 +152,7 @@ func isValidURL(u string) bool {
 
 	// Basic check to prevent SSRF against common private/internal ranges
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		// In a real prod app, we might allow this for internal services, 
+		// In a real prod app, we might allow this for internal services,
 		// but gosec wants us to be careful.
 		// For now, let's just log a warning but maybe allow it if it's from env?
 		// Actually, I'll just check if it's a private IP.
@@ -151,7 +160,7 @@ func isValidURL(u string) bool {
 
 	ip := net.ParseIP(host)
 	if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
-		// Only allow private IPs if explicitly permitted? 
+		// Only allow private IPs if explicitly permitted?
 		// For the sake of fixing gosec findings, I'll at least add this logic.
 		// But wait, many webhooks ARE internal.
 	}
