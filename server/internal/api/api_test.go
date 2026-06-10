@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -13,13 +14,17 @@ import (
 )
 
 func TestHandleNodes(t *testing.T) {
+	os.Setenv("ADMIN_TOKEN", "testtoken")
+	defer os.Unsetenv("ADMIN_TOKEN")
+
 	req, err := http.NewRequest("GET", "/api/v1/nodes", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer testtoken")
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(HandleNodes)
+	handler := AuthMiddleware(HandleNodes)
 
 	handler.ServeHTTP(rr, req)
 
@@ -34,13 +39,17 @@ func TestHandleNodes(t *testing.T) {
 }
 
 func TestHandleStats(t *testing.T) {
+	os.Setenv("ADMIN_TOKEN", "testtoken")
+	defer os.Unsetenv("ADMIN_TOKEN")
+
 	req, err := http.NewRequest("GET", "/api/v1/stats", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer testtoken")
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(HandleStats)
+	handler := AuthMiddleware(HandleStats)
 
 	handler.ServeHTTP(rr, req)
 
@@ -79,18 +88,22 @@ func TestHandleStream(t *testing.T) {
 }
 
 func TestHandleSetup(t *testing.T) {
+	os.Setenv("ADMIN_TOKEN", "testtoken")
+	defer os.Unsetenv("ADMIN_TOKEN")
+
 	req, err := http.NewRequest("GET", "/api/v1/setup?group=test&os=linux", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	req.Header.Set("Authorization", "Bearer testtoken")
 
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(HandleSetup)
+	handler := AuthMiddleware(HandleSetup)
 
 	handler.ServeHTTP(rr, req)
 
 	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+		t.Errorf("handler returned wrong status code: got %v want %v, body: %s", status, http.StatusOK, rr.Body.String())
 	}
 
 	if !strings.Contains(rr.Body.String(), "GROUP='test'") {
@@ -136,6 +149,56 @@ func TestHandleSetupSecurity(t *testing.T) {
 				t.Errorf("handler returned wrong status code for %s: got %v want %v", tt.group, status, tt.expectedStatus)
 			}
 		})
+	}
+}
+
+func TestHandleSetupUnauthorized(t *testing.T) {
+	os.Setenv("ADMIN_TOKEN", "testtoken")
+	defer os.Unsetenv("ADMIN_TOKEN")
+
+	tests := []struct {
+		name       string
+		authHeader string
+		wantCode   int
+	}{
+		{"No Auth Header", "", http.StatusUnauthorized},
+		{"Wrong Token", "Bearer wrongtoken", http.StatusUnauthorized},
+		{"Malformed Header", "WrongPrefix testtoken", http.StatusUnauthorized},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest("GET", "/api/v1/setup", nil)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+
+			rr := httptest.NewRecorder()
+			handler := AuthMiddleware(HandleSetup)
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantCode {
+				t.Errorf("expected status %v, got %v", tt.wantCode, rr.Code)
+			}
+		})
+	}
+}
+
+func TestAuthMiddlewareNoAdminTokenSet(t *testing.T) {
+	os.Unsetenv("ADMIN_TOKEN")
+
+	req, _ := http.NewRequest("GET", "/api/v1/setup", nil)
+	req.Header.Set("Authorization", "Bearer anything")
+
+	rr := httptest.NewRecorder()
+	handler := AuthMiddleware(HandleSetup)
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("expected status %v when ADMIN_TOKEN is not set, got %v", http.StatusUnauthorized, rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Server Configuration Error") {
+		t.Errorf("expected error message to mention configuration error, got %s", rr.Body.String())
 	}
 }
 

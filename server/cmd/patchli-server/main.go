@@ -60,15 +60,17 @@ func main() {
 	mux.HandleFunc("/setup", api.ServeSetupUI)
 
 	// API v1
-	mux.HandleFunc("/api/v1/nodes", api.HandleNodes)
-	mux.HandleFunc("/api/v1/stats", api.HandleStats)
-	mux.HandleFunc("/api/v1/setup", api.HandleSetup)
+	mux.HandleFunc("/api/v1/nodes", api.AuthMiddleware(api.HandleNodes))
+	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
+	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
 
 	// WebSocket
 	mux.HandleFunc("/ws", websocket.HandleWebSocket)
 
 	port := os.Getenv("PORT")
-	if port == "" { port = "8080" }
+	if port == "" {
+		port = "8080"
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + port,
