@@ -1,0 +1,4 @@
+## 2024-06-10 - Prevent Command Injection in Setup Scripts
+**Vulnerability:** Command injection vulnerability in setup script generation (`generateLinuxScript`, `generateAlpineScript`, `generateWindowsScript`) where unescaped user input (like `group`) was directly interpolated into shell scripts inside double quotes.
+**Learning:** Using double quotes around interpolated variables in shell scripts allows for command substitution (`$(...)` or `` `...` ``) and shell evaluation if the variable contents contain unescaped quotes or commands.
+**Prevention:** Always wrap dynamically generated string inputs in single quotes when generating shell scripts to prevent variable expansion and command execution. Additionally, strictly escape single quotes within the input strings (e.g., replacing `'` with `'\''` in Bash, and `'` with `''` in PowerShell) to prevent attackers from breaking out of the single-quoted context.
