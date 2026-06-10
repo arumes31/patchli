@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/gorilla/websocket"
 )
 
 type AgentManager struct {
@@ -75,9 +75,9 @@ func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error
 	if !ok {
 		return models.ErrAgentOffline
 	}
-	
+
 	msg := struct {
-		Type    string `json:"type"`
+		Type    string      `json:"type"`
 		Payload interface{} `json:"payload"`
 	}{
 		Type:    "command",
@@ -100,4 +100,20 @@ func (am *AgentManager) ReleaseJob(mac string) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	delete(am.activeJobs, mac)
+}
+
+func (am *AgentManager) Reset() {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.agents = make(map[string]*websocket.Conn)
+	am.details = make(map[string]*models.AgentDetails)
+	am.activeJobs = make(map[string]string)
+}
+
+func (am *AgentManager) SetStatus(id string, status string) {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	if a, ok := am.details[id]; ok {
+		a.Status = status
+	}
 }

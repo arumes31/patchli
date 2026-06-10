@@ -43,10 +43,11 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 	online := 0
 	rebootRequired := 0
 	for _, n := range nodes {
-		if strings.ToLower(n.Status) == "online" {
+		statusLower := strings.ToLower(n.Status)
+		if statusLower == "online" {
 			online++
 		}
-		if strings.Contains(strings.ToLower(n.Status), "reboot") {
+		if strings.Contains(statusLower, "reboot") {
 			rebootRequired++
 		}
 	}
