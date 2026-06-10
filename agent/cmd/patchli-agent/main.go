@@ -17,11 +17,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/coreos/go-systemd/v22/daemon"
-	"github.com/gorilla/websocket"
 	"github.com/arumes31/patchli/agent/internal/identity"
 	"github.com/arumes31/patchli/agent/internal/state"
 	"github.com/arumes31/patchli/agent/internal/updater"
+	"github.com/coreos/go-systemd/v22/daemon"
+	"github.com/gorilla/websocket"
 )
 
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
@@ -40,11 +40,11 @@ type WSMessage struct {
 }
 
 type HeartbeatPayload struct {
-	MacAddress    string `json:"mac_address"`
-	Hostname      string `json:"hostname"`
-	OS            string `json:"os"`
-	Kernel        string `json:"kernel"`
-	RebootNeeded  bool   `json:"reboot_needed"`
+	MacAddress   string `json:"mac_address"`
+	Hostname     string `json:"hostname"`
+	OS           string `json:"os"`
+	Kernel       string `json:"kernel"`
+	RebootNeeded bool   `json:"reboot_needed"`
 }
 
 type CommandPayload struct {
@@ -58,7 +58,7 @@ type CommandPayload struct {
 
 func performSelfDiagnosis() {
 	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
-	
+
 	fmt.Print("1. Identity check: ")
 	nodeID := identity.GetOrGenerate()
 	fmt.Printf("UUID=%s [OK]\n", nodeID)
@@ -80,7 +80,9 @@ func performSelfDiagnosis() {
 
 	fmt.Print("4. Network (Server) check: ")
 	serverURL := os.Getenv("SERVER_URL")
-	if serverURL == "" { serverURL = "localhost:8080" }
+	if serverURL == "" {
+		serverURL = "localhost:8080"
+	}
 	resp, err := http.Get("http://" + serverURL + "/health")
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
@@ -88,7 +90,7 @@ func performSelfDiagnosis() {
 		fmt.Printf("Server Health=%d [OK]\n", resp.StatusCode)
 		_ = resp.Body.Close()
 	}
-	
+
 	fmt.Println("Self-diagnosis complete.")
 }
 
@@ -169,6 +171,11 @@ func RunAgent(ctx context.Context) {
 func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm updater.PackageManager) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+
+	var lastHostname string
+	var lastRebootNeeded bool
+	var cachedData []byte
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -176,19 +183,27 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 		case <-ticker.C:
 			hostname, _ := os.Hostname()
 			rebootNeeded := pm.RebootRequired()
-			
+
 			if rebootNeeded {
 				_ = exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
 			}
 
-			payload := HeartbeatPayload{
-				MacAddress:   nodeID,
-				Hostname:     hostname,
-				RebootNeeded: rebootNeeded,
+			if cachedData == nil || hostname != lastHostname || rebootNeeded != lastRebootNeeded {
+				payload := HeartbeatPayload{
+					MacAddress:   nodeID,
+					Hostname:     hostname,
+					RebootNeeded: rebootNeeded,
+				}
+				data, err := json.Marshal(payload)
+				if err != nil {
+					continue
+				}
+				cachedData = data
+				lastHostname = hostname
+				lastRebootNeeded = rebootNeeded
 			}
-			data, err := json.Marshal(payload)
-			if err != nil { continue }
-			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
+
+			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: cachedData}
 			if err := conn.WriteJSON(msg); err != nil {
 				log.Printf("Heartbeat error: %v", err)
 				return
@@ -202,16 +217,27 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 	defer ticker.Stop()
 	client := &http.Client{Timeout: 60 * time.Second}
 
+	var lastHostname string
+	var lastRebootNeeded bool
+	var cachedData []byte
+
 	for {
 		hostname, _ := os.Hostname()
-		hb := HeartbeatPayload{
-			MacAddress:   nodeID,
-			Hostname:     hostname,
-			RebootNeeded: pm.RebootRequired(),
-		}
-		data, _ := json.Marshal(hb)
+		rebootNeeded := pm.RebootRequired()
 
-		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
+		if cachedData == nil || hostname != lastHostname || rebootNeeded != lastRebootNeeded {
+			hb := HeartbeatPayload{
+				MacAddress:   nodeID,
+				Hostname:     hostname,
+				RebootNeeded: rebootNeeded,
+			}
+			data, _ := json.Marshal(hb)
+			cachedData = data
+			lastHostname = hostname
+			lastRebootNeeded = rebootNeeded
+		}
+
+		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(cachedData))
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := client.Do(req)
@@ -258,9 +284,9 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 				return
 			}
 		}
-		
+
 		if err := state.SaveState(state.State{
-			JobID: cmd.ID,
+			JobID:  cmd.ID,
 			Action: cmd.Action,
 			Status: "running",
 		}); err != nil {
