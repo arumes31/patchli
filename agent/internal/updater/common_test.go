@@ -7,7 +7,7 @@ import (
 )
 
 func getMockCommand(ctx context.Context, name string, _ ...string) *exec.Cmd {
-	if name == "pgrep" || name == "ls" || name == "stat" {
+	if name == "pgrep" {
 		if runtime.GOOS == "windows" {
 			return exec.CommandContext(ctx, "cmd.exe", "/c", "exit 1")
 		}
@@ -26,3 +26,8 @@ func getMockCommandNoCtx(_ string, _ ...string) *exec.Cmd {
 	return exec.Command("true")
 }
 
+func init() {
+	checkDiskSpaceFunc = func(path string, minBytes uint64) error {
+		return nil
+	}
+}

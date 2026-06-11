@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"runtime"
 	"testing"
 )
 
@@ -14,6 +15,8 @@ func TestAptManagerFull(t *testing.T) {
 	defer func() { execCommand = oldExecNoCtx }()
 	oldStat := statFunc
 	defer func() { statFunc = oldStat }()
+	oldDisk := checkDiskSpaceFunc
+	defer func() { checkDiskSpaceFunc = oldDisk }()
 
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		return getMockCommandNoCtx(name, arg...)
@@ -21,6 +24,7 @@ func TestAptManagerFull(t *testing.T) {
 
 	m := &AptManager{}
 	ctx := context.Background()
+	checkDiskSpaceFunc = func(path string, minBytes uint64) error { return nil }
 
 	t.Run("CheckUpdates", func(t *testing.T) {
 		execCommandContext = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
@@ -58,12 +62,23 @@ func TestAptManagerFull(t *testing.T) {
 
 	t.Run("PreFlightCheck_Locked", func(t *testing.T) {
 		statFunc = func(name string) (os.FileInfo, error) {
-			if name == "/var/lib/dpkg/lock-frontend" { return nil, nil }
+			if name == "/var/lib/dpkg/lock-frontend" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}
 		execCommandContext = func(ctx context.Context, name string, arg ...string) *exec.Cmd {
-			// On Windows, use cmd.exe /c "echo locked" which returns 0
-			return exec.CommandContext(ctx, "cmd.exe", "/c", "echo locked")
+			if name == "pgrep" {
+				// pgrep returns 0 when process is found (locked)
+				if runtime.GOOS == "windows" {
+					return exec.CommandContext(ctx, "cmd.exe", "/c", "exit 0")
+				}
+				return exec.CommandContext(ctx, "true")
+			}
+			if runtime.GOOS == "windows" {
+				return exec.CommandContext(ctx, "cmd.exe", "/c", "exit 0")
+			}
+			return exec.CommandContext(ctx, "true")
 		}
 		err := m.PreFlightCheck(ctx)
 		if err == nil {

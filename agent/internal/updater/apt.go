@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	
+
 	"strings"
 )
 
@@ -15,7 +15,7 @@ type AptManager struct{}
 func (m *AptManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 	cmd := execCommandContext(ctx, "apt-get", "update")
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -27,7 +27,7 @@ func (m *AptManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 
 	cmd = execCommandContext(ctx, "apt-get", "-s", "upgrade")
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	
+
 	out.Reset()
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -50,7 +50,7 @@ func (m *AptManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 
 	cmd := execCommandContext(ctx, "apt-get", args...)
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -60,8 +60,10 @@ func (m *AptManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func orderPackages(packages []string) []string {
-	if len(packages) == 0 { return packages }
-	
+	if len(packages) == 0 {
+		return packages
+	}
+
 	var normal, late []string
 	for _, p := range packages {
 		if strings.Contains(p, "linux-image") || strings.Contains(p, "kernel") {
@@ -80,7 +82,7 @@ func (m *AptManager) RebootRequired() bool {
 
 func (m *AptManager) PreFlightCheck(ctx context.Context) error {
 	// 1. Check disk space (require 1GB)
-	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
+	if err := checkDiskSpaceFunc("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
 
@@ -101,4 +103,3 @@ func (m *AptManager) Cleanup(ctx context.Context) error {
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 	return cmd.Run()
 }
-

@@ -57,7 +57,7 @@ func (m *ZypperManager) RebootRequired() bool {
 }
 
 func (m *ZypperManager) PreFlightCheck(ctx context.Context) error {
-	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
+	if err := checkDiskSpaceFunc("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
 

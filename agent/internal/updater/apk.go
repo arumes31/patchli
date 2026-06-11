@@ -11,7 +11,7 @@ type ApkManager struct{}
 
 func (m *ApkManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 	cmd := execCommandContext(ctx, "apk", "update")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -40,7 +40,7 @@ func (m *ApkManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 	}
 
 	cmd := execCommandContext(ctx, "apk", args...)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -56,7 +56,7 @@ func (m *ApkManager) RebootRequired() bool {
 
 func (m *ApkManager) PreFlightCheck(ctx context.Context) error {
 	// Check disk space (require 500MB for Alpine)
-	if err := CheckDiskSpace("/var/lib/patchli", 500*1024*1024); err != nil {
+	if err := checkDiskSpaceFunc("/var/lib/patchli", 500*1024*1024); err != nil {
 		return err
 	}
 
@@ -70,4 +70,3 @@ func (m *ApkManager) Cleanup(ctx context.Context) error {
 	cmd := execCommandContext(ctx, "apk", "cache", "clean")
 	return cmd.Run()
 }
-

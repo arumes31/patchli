@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestUpdateResult(t *testing.T) {
 func TestSelfDestructPrivileges(t *testing.T) {
 	oldEuid := geteuidFunc
 	defer func() { geteuidFunc = oldEuid }()
-	
+
 	geteuidFunc = func() int { return 1000 }
 	err := SelfDestruct()
 	if err == nil || err.Error() != "self destruct requires root privileges" {
@@ -30,32 +31,44 @@ func TestDetectPackageManager(t *testing.T) {
 	defer func() { statFunc = oldStat }()
 
 	tests := []struct {
-		name     string
+		name string
 		mockStat func(string) (os.FileInfo, error)
 		expected string
 	}{
 		{"apk", func(n string) (os.FileInfo, error) {
-			if n == "/sbin/apk" { return nil, nil }
+			if n == "/sbin/apk" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}, "*updater.ApkManager"},
 		{"apt", func(n string) (os.FileInfo, error) {
-			if n == "/usr/bin/apt-get" { return nil, nil }
+			if n == "/usr/bin/apt-get" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}, "*updater.AptManager"},
 		{"dnf", func(n string) (os.FileInfo, error) {
-			if n == "/usr/bin/dnf" { return nil, nil }
+			if n == "/usr/bin/dnf" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}, "*updater.DnfManager"},
 		{"yum", func(n string) (os.FileInfo, error) {
-			if n == "/usr/bin/yum" { return nil, nil }
+			if n == "/usr/bin/yum" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}, "*updater.YumManager"},
 		{"pacman", func(n string) (os.FileInfo, error) {
-			if n == "/usr/bin/pacman" { return nil, nil }
+			if n == "/usr/bin/pacman" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}, "*updater.PacmanManager"},
 		{"zypper", func(n string) (os.FileInfo, error) {
-			if n == "/usr/bin/zypper" { return nil, nil }
+			if n == "/usr/bin/zypper" {
+				return nil, nil
+			}
 			return nil, os.ErrNotExist
 		}, "*updater.ZypperManager"},
 		{"unsupported", func(n string) (os.FileInfo, error) {
@@ -68,13 +81,15 @@ func TestDetectPackageManager(t *testing.T) {
 			statFunc = tt.mockStat
 			pm, err := DetectPackageManager()
 			if tt.name == "unsupported" {
-				// On Windows, it will fall back to DetectWindowsManager which returns &WindowsManager{}
-				// So if we are on Windows, this test might need adjustment.
 				if os.PathSeparator == '\\' {
-					if err != nil { t.Errorf("Expected success on Windows, got %v", err) }
+					if err != nil {
+						t.Errorf("Expected success on Windows, got %v", err)
+					}
 					return
 				}
-				if err == nil { t.Error("Expected error for unsupported") }
+				if err == nil {
+					t.Error("Expected error for unsupported")
+				}
 				return
 			}
 			if err != nil {
@@ -98,10 +113,135 @@ func TestSelfDestruct(t *testing.T) {
 	defer func() { removeFunc = oldRemove }()
 	oldRemoveAll := removeAllFunc
 	defer func() { removeAllFunc = oldRemoveAll }()
+	oldExe := osExecutableFunc
+	defer func() { osExecutableFunc = oldExe }()
+	oldGoos := goosFunc
+	defer func() { goosFunc = oldGoos }()
 
-	geteuidFunc = func() int { return 0 } // Mock root
+	geteuidFunc = func() int { return 0 }
+	osExecutableFunc = func() (string, error) { return "/path/to/exe", nil }
+
+	t.Run("FullSuccessLinux", func(t *testing.T) {
+		goosFunc = func() string { return "linux" }
+		statFunc = func(name string) (os.FileInfo, error) {
+			if name == "/etc/systemd/system/patchli-agent.service" {
+				return nil, nil
+			}
+			return nil, os.ErrNotExist
+		}
+		execCommand = func(name string, arg ...string) *exec.Cmd {
+			return getMockCommandNoCtx(name, arg...)
+		}
+		removeFunc = func(name string) error { return nil }
+		removeAllFunc = func(name string) error { return nil }
+
+		err := SelfDestruct()
+		if err != nil {
+			t.Errorf("SelfDestruct failed: %v", err)
+		}
+	})
+
+	t.Run("FullSuccessWindows", func(t *testing.T) {
+		goosFunc = func() string { return "windows" }
+		statFunc = func(name string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+		execCommand = func(name string, arg ...string) *exec.Cmd {
+			return getMockCommandNoCtx(name, arg...)
+		}
+		removeFunc = func(name string) error { return nil }
+		removeAllFunc = func(name string) error { return nil }
+
+		err := SelfDestruct()
+		if err != nil {
+			t.Errorf("SelfDestruct failed: %v", err)
+		}
+	})
+
+	t.Run("ExecutableFailure", func(t *testing.T) {
+		osExecutableFunc = func() (string, error) { return "", fmt.Errorf("exe error") }
+		err := SelfDestruct()
+		if err == nil || err.Error() != "failed to get executable path: exe error" {
+			t.Errorf("Expected executable error, got %v", err)
+		}
+		osExecutableFunc = func() (string, error) { return "/path/to/exe", nil }
+	})
+
+	t.Run("PartialFailures", func(t *testing.T) {
+		goosFunc = func() string { return "linux" }
+		statFunc = func(name string) (os.FileInfo, error) {
+			if name == "/etc/systemd/system/patchli-agent.service" {
+				return nil, nil
+			}
+			return nil, os.ErrNotExist
+		}
+		execCommand = func(name string, arg ...string) *exec.Cmd {
+			return getMockCommandNoCtx(name, arg...)
+		}
+		removeFunc = func(name string) error {
+			if name == "/etc/systemd/system/patchli-agent.service" {
+				return fmt.Errorf("remove error")
+			}
+			return nil
+		}
+		removeAllFunc = func(name string) error {
+			if name == "/etc/patchli" {
+				return fmt.Errorf("removeAll error")
+			}
+			return nil
+		}
+
+		err := SelfDestruct()
+		if err == nil {
+			t.Error("Expected failure due to removal errors")
+		} else {
+			if !strings.Contains(err.Error(), "remove error") || !strings.Contains(err.Error(), "removeAll error") {
+				t.Errorf("Expected specific errors in aggregated error message, got: %v", err)
+			}
+		}
+	})
+
+	t.Run("StartFailure", func(t *testing.T) {
+		goosFunc = func() string { return "linux" }
+		statFunc = func(name string) (os.FileInfo, error) { return nil, os.ErrNotExist }
+		removeFunc = func(name string) error { return nil }
+		removeAllFunc = func(name string) error { return nil }
+		execCommand = func(name string, arg ...string) *exec.Cmd {
+			if name == "sh" || name == "cmd.exe" {
+				return exec.Command("nonexistent-command-that-fails-to-start")
+			}
+			return getMockCommandNoCtx(name, arg...)
+		}
+
+		err := SelfDestruct()
+		if err == nil {
+			t.Error("Expected failure due to cmd.Start failure")
+		}
+	})
+}
+
+func TestSelfDestruct_SystemdFailures(t *testing.T) {
+	oldEuid := geteuidFunc
+	defer func() { geteuidFunc = oldEuid }()
+	oldExec := execCommand
+	defer func() { execCommand = oldExec }()
+	oldStat := statFunc
+	defer func() { statFunc = oldStat }()
+	oldRemove := removeFunc
+	defer func() { removeFunc = oldRemove }()
+	oldRemoveAll := removeAllFunc
+	defer func() { removeAllFunc = oldRemoveAll }()
+	oldExe := osExecutableFunc
+	defer func() { osExecutableFunc = oldExe }()
+	oldGoos := goosFunc
+	defer func() { goosFunc = oldGoos }()
+
+	geteuidFunc = func() int { return 0 }
+	osExecutableFunc = func() (string, error) { return "/path/to/exe", nil }
+	goosFunc = func() string { return "linux" }
 	statFunc = func(name string) (os.FileInfo, error) {
-		return nil, nil // Pretend everything exists
+		if name == "/etc/systemd/system/patchli-agent.service" {
+			return nil, nil
+		}
+		return nil, os.ErrNotExist
 	}
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		return getMockCommandNoCtx(name, arg...)
@@ -111,6 +251,6 @@ func TestSelfDestruct(t *testing.T) {
 
 	err := SelfDestruct()
 	if err != nil {
-		t.Errorf("SelfDestruct failed: %v", err)
+		t.Errorf("Expected success even if systemctl fails (it ignores Run() errors), got %v", err)
 	}
 }

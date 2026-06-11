@@ -65,7 +65,7 @@ $sysInfo.RebootRequired
 
 func (m *WindowsManager) PreFlightCheck(ctx context.Context) error {
 	// Check for 5GB free on C:
-	if err := CheckDiskSpace("C:", 5368709120); err != nil {
+	if err := checkDiskSpaceFunc("C:", 5368709120); err != nil {
 		return err
 	}
 	return nil

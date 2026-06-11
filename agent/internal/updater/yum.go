@@ -66,7 +66,7 @@ func (m *YumManager) RebootRequired() bool {
 }
 
 func (m *YumManager) PreFlightCheck(ctx context.Context) error {
-	if err := CheckDiskSpace("/var/lib/patchli", 1024*1024*1024); err != nil {
+	if err := checkDiskSpaceFunc("/var/lib/patchli", 1024*1024*1024); err != nil {
 		return err
 	}
 	if _, err := statFunc("/var/run/yum.pid"); err == nil {

@@ -12,9 +12,12 @@ func TestYumManagerFull(t *testing.T) {
 	defer func() { execCommandContext = oldExec }()
 	oldStat := statFunc
 	defer func() { statFunc = oldStat }()
+	oldDisk := checkDiskSpaceFunc
+	defer func() { checkDiskSpaceFunc = oldDisk }()
 
 	m := &YumManager{}
 	ctx := context.Background()
+	checkDiskSpaceFunc = func(path string, minBytes uint64) error { return nil }
 
 	t.Run("CheckUpdates", func(t *testing.T) {
 		execCommandContext = func(ctx context.Context, name string, arg ...string) *exec.Cmd {

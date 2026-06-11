@@ -11,17 +11,20 @@ import (
 // UpdateResult represents the outcome of an update operation.
 type UpdateResult struct {
 	Success bool
-	Output  string
-	Error   error
+	Output string
+	Error error
 }
 
 var (
-	execCommand        = exec.Command
+	execCommand = exec.Command
 	execCommandContext = exec.CommandContext
-	statFunc           = os.Stat
-	geteuidFunc        = os.Geteuid
-	removeFunc         = os.Remove
-	removeAllFunc      = os.RemoveAll
+	statFunc = os.Stat
+	geteuidFunc = os.Geteuid
+	removeFunc = os.Remove
+	removeAllFunc = os.RemoveAll
+	osExecutableFunc = os.Executable
+	goosFunc = func() string { return runtime.GOOS }
+	checkDiskSpaceFunc = CheckDiskSpace
 )
 
 // PackageManager defines the interface for OS-specific package managers.
@@ -66,12 +69,12 @@ func SelfDestruct() error {
 
 	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
 	var cmd *exec.Cmd
-	exePath, err := os.Executable()
+	exePath, err := osExecutableFunc()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %v", err)
 	}
 
-	if runtime.GOOS == "windows" {
+	if goosFunc() == "windows" {
 		script := fmt.Sprintf(`ping 127.0.0.1 -n 3 > nul & del /F /Q "%s"`, exePath)
 		cmd = execCommand("cmd.exe", "/C", script)
 	} else {
