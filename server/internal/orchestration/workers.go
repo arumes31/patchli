@@ -11,6 +11,8 @@ import (
 	"github.com/arumes31/patchli/server/internal/webhooks"
 )
 
+var jobExpirationTimeout = 2 * time.Hour
+
 type WorkerPool struct {
 	jobQueue        chan models.Job
 	maxWorkers      int
@@ -165,12 +167,11 @@ func (wp *WorkerPool) processJob(job models.Job) {
 }
 
 func (wp *WorkerPool) monitorJobExpiration(job models.Job) {
-	timeout := 2 * time.Hour
-	timer := time.NewTimer(timeout)
+	timer := time.NewTimer(jobExpirationTimeout)
 	<-timer.C
-	
+
 	running, err := db.IsJobRunning(job.ID)
 	if err == nil && running {
-		log.Printf("Job %s timed out after %v", job.ID, timeout)
+		log.Printf("Job %s timed out after %v", job.ID, jobExpirationTimeout)
 	}
 }
