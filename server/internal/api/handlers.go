@@ -16,11 +16,11 @@ import (
 )
 
 func escapeBash(s string) string {
-	return strings.ReplaceAll(s, "'", "'\\''")
+	return strings.ReplaceAll(s, "'", "'\\'")
 }
 
 func escapePowerShell(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
+	return strings.ReplaceAll(s, "'", "")
 }
 
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
