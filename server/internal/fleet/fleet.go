@@ -101,3 +101,11 @@ func (am *AgentManager) ReleaseJob(mac string) {
 	defer am.mu.Unlock()
 	delete(am.activeJobs, mac)
 }
+
+func (am *AgentManager) Reset() {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	am.agents = make(map[string]*websocket.Conn)
+	am.details = make(map[string]*models.AgentDetails)
+	am.activeJobs = make(map[string]string)
+}

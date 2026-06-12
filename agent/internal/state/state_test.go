@@ -4,10 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"runtime"
 )
 
 func TestState(t *testing.T) {
-	// Create a temporary state file for testing
 	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -18,7 +18,6 @@ func TestState(t *testing.T) {
 	stateFile = filepath.Join(tmpDir, "state.json")
 	defer func() { stateFile = oldStateFile }()
 
-	// Test SaveState
 	state := State{
 		JobID:  "test-job",
 		Action: "apply_updates",
@@ -28,7 +27,6 @@ func TestState(t *testing.T) {
 		t.Errorf("SaveState failed: %v", err)
 	}
 
-	// Test LoadState
 	loaded, err := LoadState()
 	if err != nil {
 		t.Errorf("LoadState failed: %v", err)
@@ -40,7 +38,6 @@ func TestState(t *testing.T) {
 		t.Errorf("Expected JobID %s, got %s", state.JobID, loaded.JobID)
 	}
 
-	// Test ClearState
 	if err := ClearState(); err != nil {
 		t.Errorf("ClearState failed: %v", err)
 	}
@@ -48,7 +45,6 @@ func TestState(t *testing.T) {
 		t.Error("State file still exists after ClearState")
 	}
 
-	// Test LoadState after ClearState
 	loaded, err = LoadState()
 	if err != nil {
 		t.Errorf("LoadState failed after clear: %v", err)
@@ -74,37 +70,20 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 }
 
 func TestSaveStateError(t *testing.T) {
-	// Test SaveState with invalid path
 	oldStateFile := stateFile
-	// On Windows, a path with invalid characters
-	stateFile = "Z:\\invalid\\path\\?:|/state.json"
+	if runtime.GOOS == "windows" {
+		stateFile = "Z:\\invalid\\path\\?:|/state.json"
+	} else {
+		// On Linux, use a path that is a directory
+		tmpDir, _ := os.MkdirTemp("", "patchli-dir-*")
+		defer os.RemoveAll(tmpDir)
+		stateFile = tmpDir
+	}
 	defer func() { stateFile = oldStateFile }()
 
 	state := State{JobID: "test"}
 	err := SaveState(state)
 	if err == nil {
 		t.Error("SaveState should have failed for invalid path")
-	}
-}
-
-func TestLoadStateError(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	oldStateFile := stateFile
-	stateFile = filepath.Join(tmpDir, "state.json")
-	defer func() { stateFile = oldStateFile }()
-
-	// Write invalid JSON
-	if err := os.WriteFile(stateFile, []byte("invalid json"), 0644); err != nil {
-		t.Fatalf("Failed to write invalid json: %v", err)
-	}
-
-	_, err = LoadState()
-	if err == nil {
-		t.Error("LoadState should have failed for invalid JSON")
 	}
 }
