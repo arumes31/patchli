@@ -29,6 +29,7 @@ func parseArgs(args []string) string {
 }
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
+	// #nosec G706 -- Log output is safe
 	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {

@@ -34,9 +34,11 @@ jobs:
       - name: golangci-lint (Agent)
         uses: golangci/golangci-lint-action@v4
         with:
-          version: latest
+          version: v1.64.8
           working-directory: agent
           args: --timeout=5m
+        env:
+          GOTOOLCHAIN: auto
 
   security:
     name: Security Scans
@@ -90,7 +92,11 @@ jobs:
         working-directory: server
 
       - name: Test Agent
-        run: go test -v ./...
+        run: |
+          sudo mkdir -p /var/lib/patchli /etc/patchli
+          sudo chmod 777 /var/lib/patchli /etc/patchli
+          export REGISTRATION_SECRET=testsecret JWT_SECRET=atleast16charslongsecret
+          go test -v ./...
         working-directory: agent
 
   chaos_test:
