@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -78,8 +77,7 @@ func main() {
 	}
 
 	go func() {
-		sanitizedPort := strings.ReplaceAll(strings.ReplaceAll(port, "\n", ""), "\r", "")
-		log.Printf("Server listening on :%s", sanitizedPort)
+		log.Printf("Server listening on :%s", port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}

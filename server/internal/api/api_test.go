@@ -92,7 +92,7 @@ func TestHandleSetup(t *testing.T) {
 		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
 	}
 
-	if !strings.Contains(rr.Body.String(), "GROUP='test'") {
+	if !strings.Contains(rr.Body.String(), "GROUP=\"test\"") {
 		t.Error("Response body should contain group name")
 	}
 }

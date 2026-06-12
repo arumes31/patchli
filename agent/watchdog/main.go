@@ -9,14 +9,7 @@ import (
 	"time"
 )
 
-import (
-	"sync"
-)
-
-var (
-	execCommand      = exec.Command
-	execCommandMutex sync.RWMutex
-)
+var execCommand = exec.Command
 
 func main() {
 	agentPath := parseArgs(os.Args)
@@ -35,19 +28,12 @@ func parseArgs(args []string) string {
 	return agentPath
 }
 
-func getExecCommand() func(string, ...string) *exec.Cmd {
-	execCommandMutex.RLock()
-	defer execCommandMutex.RUnlock()
-	return execCommand
-}
-
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
-	// #nosec G706 -- Logging agent path is safe here
+	/* #nosec G706 */
 	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {
-		cmdFunc := getExecCommand()
-		cmd := cmdFunc(agentPath)
+		cmd := execCommand(agentPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

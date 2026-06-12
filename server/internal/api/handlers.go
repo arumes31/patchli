@@ -42,9 +42,9 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stats := struct {
-		Vitality int    `json:"vitality"`
-		Immune   string `json:"immune"`
-		Recovery int    `json:"recovery"`
+		Vitality   int    `json:"vitality"`
+		Immune     string `json:"immune"`
+		Recovery   int    `json:"recovery"`
 	}{
 		Vitality: len(nodes),
 		Immune:   compliance,
@@ -58,13 +58,9 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	group := r.URL.Query().Get("group")
-	if group == "" {
-		group = "default"
-	}
+	if group == "" { group = "default" }
 	osType := r.URL.Query().Get("os")
-	if osType == "" {
-		osType = "linux"
-	}
+	if osType == "" { osType = "linux" }
 
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := auth.GenerateRegistrationSignature(group, timestamp)
@@ -114,7 +110,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
-	data := struct{ BaseURL string }{BaseURL: baseURL}
+	data := struct { BaseURL string }{ BaseURL: baseURL }
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Error executing template: %v", err)
 	}
@@ -124,10 +120,10 @@ func generateLinuxScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 echo "--- Patchli Agent Setup (Linux) ---"
-GROUP='%s'
-TIMESTAMP='%s'
-SIGNATURE='%s'
-SERVER_URL='%s'
+GROUP="%s"
+TIMESTAMP="%s"
+SIGNATURE="%s"
+SERVER_URL="%s"
 
 echo "1. Creating configuration..."
 mkdir -p /etc/patchli
@@ -156,17 +152,17 @@ EOF
 # systemctl start patchli-agent
 
 echo "SUCCESS: Patchli Agent configured for group: $GROUP"
-`, escapeBash(group), escapeBash(ts), escapeBash(sig), escapeBash(url))
+`, group, ts, sig, url)
 }
 
 func generateAlpineScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
 echo "--- Patchli Agent Setup (Alpine) ---"
-GROUP='%s'
-TIMESTAMP='%s'
-SIGNATURE='%s'
-SERVER_URL='%s'
+GROUP="%s"
+TIMESTAMP="%s"
+SIGNATURE="%s"
+SERVER_URL="%s"
 
 echo "1. Creating configuration..."
 mkdir -p /etc/patchli
@@ -186,16 +182,16 @@ EOF
 chmod +x /etc/init.d/patchli-agent
 
 echo "SUCCESS: Patchli Agent configured for group: $GROUP"
-`, escapeBash(group), escapeBash(ts), escapeBash(sig), escapeBash(url))
+`, group, ts, sig, url)
 }
 
 func generateWindowsScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`$ErrorActionPreference = "Stop"
 Write-Host "--- Patchli Agent Setup (Windows) ---"
-$Group = '%s'
-$Timestamp = '%s'
-$Signature = '%s'
-$ServerUrl = '%s'
+$Group = "%s"
+$Timestamp = "%s"
+$Signature = "%s"
+$ServerUrl = "%s"
 
 Write-Host "1. Creating configuration..."
 $ConfigDir = "C:\ProgramData\Patchli"
@@ -205,16 +201,8 @@ server_url: $ServerUrl
 group: $Group
 "@ | Out-File -FilePath "$ConfigDir\config.yaml" -Encoding UTF8
 
-Write-Host "SUCCESS: Patchli Agent configured for group: $$Group"
-`, escapePowerShell(group), escapePowerShell(ts), escapePowerShell(sig), escapePowerShell(url))
-}
-
-func escapeBash(s string) string {
-	return strings.ReplaceAll(s, "'", "'\\''")
-}
-
-func escapePowerShell(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
+Write-Host "SUCCESS: Patchli Agent configured for group: $Group"
+`, group, ts, sig, url)
 }
 
 func HandleStream(w http.ResponseWriter, r *http.Request) {

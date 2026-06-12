@@ -10,7 +10,6 @@ import (
 
 func TestRunWatchdog_AgentExits(t *testing.T) {
 	// Mock execCommand to exit immediately
-	execCommandMutex.Lock()
 	oldExec := execCommand
 	execCommand = func(name string, args ...string) *exec.Cmd {
 		if runtime.GOOS == "windows" {
@@ -18,12 +17,7 @@ func TestRunWatchdog_AgentExits(t *testing.T) {
 		}
 		return exec.Command("true")
 	}
-	execCommandMutex.Unlock()
-	defer func() {
-		execCommandMutex.Lock()
-		execCommand = oldExec
-		execCommandMutex.Unlock()
-	}()
+	defer func() { execCommand = oldExec }()
 
 	sigChan := make(chan os.Signal, 1)
 	go runWatchdog("dummy-agent", sigChan)
@@ -33,17 +27,11 @@ func TestRunWatchdog_AgentExits(t *testing.T) {
 }
 
 func TestRunWatchdog_StartError(t *testing.T) {
-	execCommandMutex.Lock()
 	oldExec := execCommand
 	execCommand = func(name string, args ...string) *exec.Cmd {
 		return exec.Command("invalid-command-that-does-not-exist")
 	}
-	execCommandMutex.Unlock()
-	defer func() {
-		execCommandMutex.Lock()
-		execCommand = oldExec
-		execCommandMutex.Unlock()
-	}()
+	defer func() { execCommand = oldExec }()
 
 	sigChan := make(chan os.Signal, 1)
 	go runWatchdog("dummy-agent", sigChan)

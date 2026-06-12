@@ -76,12 +76,8 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 func TestSaveStateError(t *testing.T) {
 	// Test SaveState with invalid path
 	oldStateFile := stateFile
-	tmpDir := t.TempDir()
-
-	// Create a directory, then try to use it as a file
-	dirPath := filepath.Join(tmpDir, "invalid-dir")
-	_ = os.Mkdir(dirPath, 0755)
-	stateFile = dirPath
+	// On Windows, a path with invalid characters
+	stateFile = "Z:\\invalid\\path\\?:|/state.json"
 	defer func() { stateFile = oldStateFile }()
 
 	state := State{JobID: "test"}
