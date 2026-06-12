@@ -17,10 +17,10 @@ func CheckDiskSpace(path string, minBytes uint64) error {
 	}
 
 	var available uint64
-	if stat.Bsize > 0 && uint64(stat.Bavail) > math.MaxUint64/uint64(stat.Bsize) { // #nosec G115 -- Checked for overflow
+	if stat.Bsize > 0 && stat.Bavail > math.MaxUint64/uint64(stat.Bsize) {
 		available = math.MaxUint64
 	} else {
-		available = uint64(stat.Bavail) * uint64(stat.Bsize) // #nosec G115 -- Checked for overflow
+		available = stat.Bavail * uint64(stat.Bsize)
 	}
 
 	if available < minBytes {
