@@ -11,20 +11,21 @@ import (
 // UpdateResult represents the outcome of an update operation.
 type UpdateResult struct {
 	Success bool
-	Output string
-	Error error
+	Output  string
+	Error   error
 }
 
 var (
-	execCommand = exec.Command
+	execCommand        = exec.Command
 	execCommandContext = exec.CommandContext
-	statFunc = os.Stat
-	geteuidFunc = os.Geteuid
-	removeFunc = os.Remove
-	removeAllFunc = os.RemoveAll
-	osExecutableFunc = os.Executable
-	goosFunc = func() string { return runtime.GOOS }
+	statFunc           = os.Stat
+	geteuidFunc        = os.Geteuid
+	removeFunc         = os.Remove
+	removeAllFunc      = os.RemoveAll
+	osExecutableFunc   = os.Executable
+	goosFunc           = func() string { return runtime.GOOS }
 	checkDiskSpaceFunc = CheckDiskSpace
+	isWindowsFunc      = func() bool { return os.PathSeparator == '\\' }
 )
 
 // PackageManager defines the interface for OS-specific package managers.
@@ -98,7 +99,7 @@ func DetectPackageManager() (PackageManager, error) {
 	if _, err := statFunc("/sbin/apk"); err == nil {
 		return &ApkManager{}, nil
 	}
-	
+
 	// Check for apt (Debian/Ubuntu)
 	if _, err := statFunc("/usr/bin/apt-get"); err == nil {
 		return &AptManager{}, nil
@@ -125,7 +126,7 @@ func DetectPackageManager() (PackageManager, error) {
 	}
 
 	// Check if running on Windows
-	if os.PathSeparator == '\\' {
+	if isWindowsFunc() {
 		return DetectWindowsManager()
 	}
 

@@ -11,7 +11,10 @@ import (
 	"github.com/arumes31/patchli/server/internal/webhooks"
 )
 
-var jobExpirationTimeout = 2 * time.Hour
+var (
+	jobExpirationTimeout = 2 * time.Hour
+	notifyWebhooks       = webhooks.NotifyWebhooks
+)
 
 type WorkerPool struct {
 	jobQueue        chan models.Job
@@ -147,7 +150,7 @@ func (wp *WorkerPool) processJob(job models.Job) {
 
 	if err != nil {
 		log.Printf("Failed to send command to agent %s: %v", job.NodeMac, err)
-		webhooks.NotifyWebhooks(webhooks.WebhookPayload{
+		notifyWebhooks(webhooks.WebhookPayload{
 			Event:   "job_failed",
 			Message: "Failed to communicate with agent.",
 			JobID:   job.ID,
@@ -158,7 +161,7 @@ func (wp *WorkerPool) processJob(job models.Job) {
 
 	go wp.monitorJobExpiration(job)
 
-	webhooks.NotifyWebhooks(webhooks.WebhookPayload{
+	notifyWebhooks(webhooks.WebhookPayload{
 		Event:   "job_started",
 		Message: "Patch job dispatched successfully.",
 		JobID:   job.ID,

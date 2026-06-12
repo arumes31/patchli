@@ -29,66 +29,68 @@ func TestSelfDestructPrivileges(t *testing.T) {
 func TestDetectPackageManager(t *testing.T) {
 	oldStat := statFunc
 	defer func() { statFunc = oldStat }()
+	oldIsWindows := isWindowsFunc
+	defer func() { isWindowsFunc = oldIsWindows }()
 
 	tests := []struct {
-		name string
-		mockStat func(string) (os.FileInfo, error)
-		expected string
+		name        string
+		mockStat    func(string) (os.FileInfo, error)
+		isWindows   bool
+		expected    string
+		expectError bool
 	}{
 		{"apk", func(n string) (os.FileInfo, error) {
 			if n == "/sbin/apk" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
-		}, "*updater.ApkManager"},
+		}, false, "*updater.ApkManager", false},
 		{"apt", func(n string) (os.FileInfo, error) {
 			if n == "/usr/bin/apt-get" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
-		}, "*updater.AptManager"},
+		}, false, "*updater.AptManager", false},
 		{"dnf", func(n string) (os.FileInfo, error) {
 			if n == "/usr/bin/dnf" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
-		}, "*updater.DnfManager"},
+		}, false, "*updater.DnfManager", false},
 		{"yum", func(n string) (os.FileInfo, error) {
 			if n == "/usr/bin/yum" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
-		}, "*updater.YumManager"},
+		}, false, "*updater.YumManager", false},
 		{"pacman", func(n string) (os.FileInfo, error) {
 			if n == "/usr/bin/pacman" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
-		}, "*updater.PacmanManager"},
+		}, false, "*updater.PacmanManager", false},
 		{"zypper", func(n string) (os.FileInfo, error) {
 			if n == "/usr/bin/zypper" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
-		}, "*updater.ZypperManager"},
+		}, false, "*updater.ZypperManager", false},
+		{"windows", func(n string) (os.FileInfo, error) {
+			return nil, os.ErrNotExist
+		}, true, "*updater.WindowsManager", false},
 		{"unsupported", func(n string) (os.FileInfo, error) {
 			return nil, os.ErrNotExist
-		}, ""},
+		}, false, "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			statFunc = tt.mockStat
+			isWindowsFunc = func() bool { return tt.isWindows }
 			pm, err := DetectPackageManager()
-			if tt.name == "unsupported" {
-				if os.PathSeparator == '\\' {
-					if err != nil {
-						t.Errorf("Expected success on Windows, got %v", err)
-					}
-					return
-				}
+			if tt.expectError {
 				if err == nil {
-					t.Error("Expected error for unsupported")
+					t.Error("Expected error, got nil")
 				}
 				return
 			}

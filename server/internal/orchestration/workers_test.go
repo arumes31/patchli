@@ -15,10 +15,10 @@ func TestWorkerPool(t *testing.T) {
 
 	t.Run("Submit Job", func(t *testing.T) {
 		job := models.Job{
-			ID:       "job-1",
-			NodeMac:  "00:11:22:33:44:55",
-			GroupID:  1,
-			Action:   "patch",
+			ID:      "job-1",
+			NodeMac: "00:11:22:33:44:55",
+			GroupID: 1,
+			Action:  "patch",
 		}
 		wp.Submit(job)
 		j := <-wp.jobQueue
@@ -47,13 +47,13 @@ func TestWorkerPool(t *testing.T) {
 func TestProcessJob(t *testing.T) {
 	wp := NewWorkerPool(1)
 
-	// Mock webhooks.NotifyWebhooks
-	oldNotify := webhooks.NotifyWebhooks
-	defer func() { webhooks.NotifyWebhooks = oldNotify }()
+	// Mock notifyWebhooks
+	oldNotify := notifyWebhooks
+	defer func() { notifyWebhooks = oldNotify }()
 
 	var lastEvent string
 	var mu sync.Mutex
-	webhooks.NotifyWebhooks = func(payload webhooks.WebhookPayload) {
+	notifyWebhooks = func(payload webhooks.WebhookPayload) {
 		mu.Lock()
 		lastEvent = payload.Event
 		mu.Unlock()
@@ -145,9 +145,9 @@ func TestWorkerPoolStartStop(t *testing.T) {
 
 	// Submit a job and verify it gets picked up
 	done := make(chan bool)
-	oldNotify := webhooks.NotifyWebhooks
-	defer func() { webhooks.NotifyWebhooks = oldNotify }()
-	webhooks.NotifyWebhooks = func(payload webhooks.WebhookPayload) {
+	oldNotify := notifyWebhooks
+	defer func() { notifyWebhooks = oldNotify }()
+	notifyWebhooks = func(payload webhooks.WebhookPayload) {
 		if payload.JobID == "picked-up" {
 			done <- true
 		}
@@ -197,9 +197,9 @@ func TestWorkerGracefulStopWithRemainingJobs(t *testing.T) {
 
 	processedCount := 0
 	var mu sync.Mutex
-	oldNotify := webhooks.NotifyWebhooks
-	defer func() { webhooks.NotifyWebhooks = oldNotify }()
-	webhooks.NotifyWebhooks = func(payload webhooks.WebhookPayload) {
+	oldNotify := notifyWebhooks
+	defer func() { notifyWebhooks = oldNotify }()
+	notifyWebhooks = func(payload webhooks.WebhookPayload) {
 		mu.Lock()
 		processedCount++
 		mu.Unlock()
