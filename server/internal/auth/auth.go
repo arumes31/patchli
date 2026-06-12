@@ -11,19 +11,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var (
-	registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
-	jwtSecret          = []byte(os.Getenv("JWT_SECRET"))
-)
+func getRegistrationSecret() []byte {
+	return []byte(os.Getenv("REGISTRATION_SECRET"))
+}
 
-func init() {
-	if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
-		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
-	}
+func getJWTSecret() []byte {
+	return []byte(os.Getenv("JWT_SECRET"))
 }
 
 func GenerateRegistrationSignature(group string, timestamp string) string {
-	h := hmac.New(sha256.New, registrationSecret)
+	h := hmac.New(sha256.New, getRegistrationSecret())
 	h.Write([]byte(fmt.Sprintf("%s:%s", group, timestamp)))
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -34,7 +31,7 @@ func GenerateAgentJWT(macAddr string) (string, error) {
 		"iat": time.Now().Unix(),
 		"exp": time.Now().Add(time.Hour * 24).Unix(), // TODO: refresh token flow
 	})
-	return token.SignedString(jwtSecret)
+	return token.SignedString(getJWTSecret())
 }
 
 func ValidateRegistration(group, timestamp, signature string) bool {

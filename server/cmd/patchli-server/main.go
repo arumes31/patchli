@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"context"
 	"log"
 	"net/http"
@@ -77,7 +78,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Server listening on :%s", port)
+		log.Printf("Server listening on :%s", strings.ReplaceAll(strings.ReplaceAll(port, "\n", ""), "\r", ""))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
