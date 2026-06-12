@@ -81,11 +81,11 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	var script string
 	switch osType {
 	case "windows":
-		script = generateWindowsScript(escapePowerShell(group), escapePowerShell(timestamp), escapePowerShell(signature), escapePowerShell(baseURL))
+		script = generateWindowsScript(group, timestamp, signature, baseURL)
 	case "alpine":
-		script = generateAlpineScript(escapeBash(group), escapeBash(timestamp), escapeBash(signature), escapeBash(baseURL))
+		script = generateAlpineScript(group, timestamp, signature, baseURL)
 	default:
-		script = generateLinuxScript(escapeBash(group), escapeBash(timestamp), escapeBash(signature), escapeBash(baseURL))
+		script = generateLinuxScript(group, timestamp, signature, baseURL)
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
@@ -120,10 +120,10 @@ func generateLinuxScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
 echo "--- Patchli Agent Setup (Linux) ---"
-GROUP='%s'
-TIMESTAMP='%s'
-SIGNATURE='%s'
-SERVER_URL='%s'
+GROUP="%s"
+TIMESTAMP="%s"
+SIGNATURE="%s"
+SERVER_URL="%s"
 
 echo "1. Creating configuration..."
 mkdir -p /etc/patchli
@@ -159,10 +159,10 @@ func generateAlpineScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
 echo "--- Patchli Agent Setup (Alpine) ---"
-GROUP='%s'
-TIMESTAMP='%s'
-SIGNATURE='%s'
-SERVER_URL='%s'
+GROUP="%s"
+TIMESTAMP="%s"
+SIGNATURE="%s"
+SERVER_URL="%s"
 
 echo "1. Creating configuration..."
 mkdir -p /etc/patchli
@@ -188,10 +188,10 @@ echo "SUCCESS: Patchli Agent configured for group: $GROUP"
 func generateWindowsScript(group, ts, sig, url string) string {
 	return fmt.Sprintf(`$ErrorActionPreference = "Stop"
 Write-Host "--- Patchli Agent Setup (Windows) ---"
-$Group = '%s'
-$Timestamp = '%s'
-$Signature = '%s'
-$ServerUrl = '%s'
+$Group = "%s"
+$Timestamp = "%s"
+$Signature = "%s"
+$ServerUrl = "%s"
 
 Write-Host "1. Creating configuration..."
 $ConfigDir = "C:\ProgramData\Patchli"
@@ -218,12 +218,4 @@ func HandleStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	<-r.Context().Done()
-}
-
-func escapeBash(s string) string {
-	return strings.ReplaceAll(s, "'", "'\\''")
-}
-
-func escapePowerShell(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
 }

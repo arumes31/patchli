@@ -12,26 +12,13 @@ import (
 )
 
 var (
-	registrationSecret []byte
-	jwtSecret          []byte
+	registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
+	jwtSecret          = []byte(os.Getenv("JWT_SECRET"))
 )
 
 func init() {
-	registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
-	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-
-	// Allow empty secrets during tests to prevent init panic if not set early enough
-	if os.Getenv("GO_ENV") == "test" || os.Getenv("CI") == "true" {
-		if len(registrationSecret) == 0 {
-			registrationSecret = []byte("testsecret")
-		}
-		if len(jwtSecret) == 0 {
-			jwtSecret = []byte("atleast16charslongsecret")
-		}
-	} else {
-		if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
-			panic("REGISTRATION_SECRET and JWT_SECRET must be set")
-		}
+	if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
+		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
 	}
 }
 
