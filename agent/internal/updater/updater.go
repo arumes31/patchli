@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // UpdateResult represents the outcome of an update operation.
@@ -42,33 +43,62 @@ type PackageManager interface {
 	Cleanup(ctx context.Context) error
 }
 
+// isAdmin checks if the current process has administrator/root privileges.
+func isAdmin() bool {
+	if goosFunc() == "windows" {
+		// On Windows, check for administrator status using net session
+		cmd := execCommand("net", "session")
+		if err := cmd.Run(); err == nil {
+			return true
+		}
+		return false
+	}
+	// On Unix, check for root
+	return geteuidFunc() == 0
+}
+
 // SelfDestruct completely uninstalls the agent, removes its configuration, and stops the service.
 func SelfDestruct() error {
-	if geteuidFunc() != 0 {
-		return fmt.Errorf("self destruct requires root privileges")
+	if !isAdmin() {
+		return fmt.Errorf("self destruct requires root/administrator privileges")
 	}
 
 	var errs []error
 
-	// 1. Remove systemd service if exists
-	if _, err := statFunc("/etc/systemd/system/patchli-agent.service"); err == nil {
-		_ = execCommand("systemctl", "stop", "patchli-agent").Run()
-		_ = execCommand("systemctl", "disable", "patchli-agent").Run()
-		if err := removeFunc("/etc/systemd/system/patchli-agent.service"); err != nil {
+	if goosFunc() == "windows" {
+		// Windows service cleanup
+		_ = execCommand("sc.exe", "stop", "patchli-agent").Run()
+		_ = execCommand("sc.exe", "delete", "patchli-agent").Run()
+
+		// Remove configuration and state
+		pd := os.Getenv("PROGRAMDATA")
+		if pd == "" {
+			pd = `C:\ProgramData`
+		}
+		if err := removeAllFunc(pd + `\Patchli`); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}
-		_ = execCommand("systemctl", "daemon-reload").Run()
+	} else {
+		// Unix: Remove systemd service if exists
+		if _, err := statFunc("/etc/systemd/system/patchli-agent.service"); err == nil {
+			_ = execCommand("systemctl", "stop", "patchli-agent").Run()
+			_ = execCommand("systemctl", "disable", "patchli-agent").Run()
+			if err := removeFunc("/etc/systemd/system/patchli-agent.service"); err != nil {
+				errs = append(errs, err)
+			}
+			_ = execCommand("systemctl", "daemon-reload").Run()
+		}
+
+		// Remove configuration and state
+		if err := removeAllFunc("/etc/patchli"); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
+		if err := removeAllFunc("/var/lib/patchli"); err != nil && !os.IsNotExist(err) {
+			errs = append(errs, err)
+		}
 	}
 
-	// 2. Remove configuration and state
-	if err := removeAllFunc("/etc/patchli"); err != nil {
-		errs = append(errs, err)
-	}
-	if err := removeAllFunc("/var/lib/patchli"); err != nil {
-		errs = append(errs, err)
-	}
-
-	// 3. Remove binary (spawn a detached process to delete the binary after a delay)
+	// Remove binary (spawn a detached process to delete the binary after a delay)
 	var cmd *exec.Cmd
 	exePath, err := osExecutableFunc()
 	if err != nil {
@@ -76,10 +106,13 @@ func SelfDestruct() error {
 	}
 
 	if goosFunc() == "windows" {
+		// Use proper quoting to avoid injection
 		script := fmt.Sprintf(`ping 127.0.0.1 -n 3 > nul & del /F /Q "%s"`, exePath)
 		cmd = execCommand("cmd.exe", "/C", script)
 	} else {
-		script := fmt.Sprintf(`sleep 2; rm -f "%s"`, exePath)
+		// Single-quote the path on Unix to prevent shell injection
+		escapedPath := "'" + strings.ReplaceAll(exePath, "'", "'\\''") + "'"
+		script := fmt.Sprintf(`sleep 2; rm -f %s`, escapedPath)
 		cmd = execCommand("sh", "-c", script)
 	}
 	detachProcess(cmd)

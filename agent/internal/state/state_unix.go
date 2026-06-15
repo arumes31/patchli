@@ -2,4 +2,6 @@
 
 package state
 
-var stateFile = "/var/lib/patchli/state.json"
+func init() {
+	stateFile = "/var/lib/patchli/state.json"
+}

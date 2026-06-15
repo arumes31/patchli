@@ -2,4 +2,15 @@
 
 package state
 
-var stateFile = "C:\\ProgramData\\Patchli\\state.json"
+import (
+	"os"
+	"path/filepath"
+)
+
+func init() {
+	pd := os.Getenv("PROGRAMDATA")
+	if pd == "" {
+		pd = `C:\ProgramData`
+	}
+	stateFile = filepath.Join(pd, "Patchli", "state.json")
+}

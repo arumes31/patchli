@@ -25,6 +25,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// shellCommandContext returns an exec.Cmd that runs a shell script cross-platform.
+// On Windows it uses cmd.exe /c, on Unix it uses sh -c.
+func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.CommandContext(ctx, "cmd.exe", "/c", script)
+	}
+	return exec.CommandContext(ctx, "sh", "-c", script)
+}
+
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
 
 // Message types matching server
@@ -63,12 +72,28 @@ type TokenPair struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
+// getDataDir returns the platform-specific data directory for Patchli.
+func getDataDir() string {
+	if runtime.GOOS == "windows" {
+		pd := os.Getenv("PROGRAMDATA")
+		if pd == "" {
+			pd = `C:\ProgramData`
+		}
+		return filepath.Join(pd, "Patchli")
+	}
+	return "/etc/patchli"
+}
+
 func performSelfDiagnosis() {
 	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
 
 	fmt.Print("1. Identity check: ")
-	nodeID := identity.GetOrGenerate()
-	fmt.Printf("UUID=%s [OK]\n", nodeID)
+	nodeID, err := identity.GetOrGenerate()
+	if err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+	} else {
+		fmt.Printf("UUID=%s [OK]\n", nodeID)
+	}
 
 	fmt.Print("2. Package Manager check: ")
 	pm, err := updater.DetectPackageManager()
@@ -79,7 +104,7 @@ func performSelfDiagnosis() {
 	}
 
 	fmt.Print("3. Disk Space check: ")
-	if err := updater.CheckDiskSpace("/etc/patchli", 100*1024*1024); err != nil {
+	if err := updater.CheckDiskSpace(getDataDir(), 100*1024*1024); err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
 		fmt.Println("Available > 100MB [OK]")
@@ -103,7 +128,11 @@ func performSelfDiagnosis() {
 
 func getTokenFile() string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(os.Getenv("PROGRAMDATA"), "Patchli", "tokens.json")
+		pd := os.Getenv("PROGRAMDATA")
+		if pd == "" {
+			pd = `C:\ProgramData`
+		}
+		return filepath.Join(pd, "Patchli", "tokens.json")
 	}
 	return "/etc/patchli/tokens.json"
 }
@@ -114,7 +143,9 @@ func saveTokens(pair TokenPair) error {
 		return err
 	}
 	dir := filepath.Dir(getTokenFile())
-	_ = os.MkdirAll(dir, 0750)
+	if err := os.MkdirAll(dir, 0750); err != nil {
+		return fmt.Errorf("failed to create directory %s: %v", dir, err)
+	}
 	return os.WriteFile(getTokenFile(), data, 0600)
 }
 
@@ -136,10 +167,14 @@ func refreshTokens(ctx context.Context, serverURL, nodeID string, refreshToken s
 		"refresh_token": refreshToken,
 	})
 
-	req, _ := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh request: %v", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +212,10 @@ func RunAgent(ctx context.Context) {
 		log.Fatalf("Failed to detect package manager: %v", err)
 	}
 
-	nodeID := identity.GetOrGenerate()
+	nodeID, err := identity.GetOrGenerate()
+	if err != nil {
+		log.Fatalf("Failed to get agent identity: %v", err)
+	}
 	log.Printf("Agent Identity (UUID): %s", nodeID)
 
 	// State Recovery on Boot
@@ -278,7 +316,7 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 			hostname, _ := os.Hostname()
 			rebootNeeded := pm.RebootRequired()
 
-			if rebootNeeded {
+			if rebootNeeded && runtime.GOOS != "windows" {
 				_ = exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
 			}
 
@@ -321,7 +359,16 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 		}
 		data, _ := json.Marshal(hb)
 
-		req, _ := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
+		req, err := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
+		if err != nil {
+			log.Printf("Failed to create poll request: %v", err)
+			select {
+			case <-time.After(10 * time.Second):
+			case <-ctx.Done():
+				return
+			}
+			continue
+		}
 		req.Header.Set("Content-Type", "application/json")
 		if tokens != nil {
 			req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
@@ -373,7 +420,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 
 		if cmd.PrePatchScript != "" {
 			log.Printf("Executing Pre-Patch Script...")
-			out, err := exec.CommandContext(ctx, "sh", "-c", cmd.PrePatchScript).CombinedOutput()
+			out, err := shellCommandContext(ctx, cmd.PrePatchScript).CombinedOutput()
 			if err != nil {
 				log.Printf("Pre-Patch Script Failed: %v, Output: %s", err, string(out))
 				return
@@ -417,7 +464,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 	if cmd.Action == "apply_updates" && err == nil {
 		if cmd.PostPatchScript != "" {
 			log.Printf("Executing Post-Patch Script...")
-			out, execErr := exec.CommandContext(ctx, "sh", "-c", cmd.PostPatchScript).CombinedOutput()
+			out, execErr := shellCommandContext(ctx, cmd.PostPatchScript).CombinedOutput()
 			if execErr != nil {
 				log.Printf("Post-Patch Script Failed: %v, Output: %s", execErr, string(out))
 				err = execErr
@@ -427,7 +474,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 
 		if err == nil && cmd.HealthCheckCommand != "" {
 			log.Printf("Executing Health Check Command...")
-			out, execErr := exec.CommandContext(ctx, "sh", "-c", cmd.HealthCheckCommand).CombinedOutput()
+			out, execErr := shellCommandContext(ctx, cmd.HealthCheckCommand).CombinedOutput()
 			if execErr != nil {
 				log.Printf("Health Check Failed: %v, Output: %s", execErr, string(out))
 				err = execErr
@@ -476,6 +523,47 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 	if err := tmpFile.Close(); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
+
+	// Download the signature file before verification
+	sigReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+serverURL+"/download/agent.sig", nil)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to create signature download request: %v", err)}
+	}
+	sigResp, err := client.Do(sigReq)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to download signature: %v", err)}
+	}
+	defer sigResp.Body.Close()
+
+	if sigResp.StatusCode != http.StatusOK {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during signature download", sigResp.StatusCode)}
+	}
+
+	sigFile, err := os.CreateTemp("", "patchli-agent-sig-*")
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+	sigName := sigFile.Name()
+	defer func() {
+		_ = os.Remove(sigName)
+	}()
+
+	if _, err := io.Copy(sigFile, sigResp.Body); err != nil {
+		_ = sigFile.Close()
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to write signature file: %v", err)}
+	}
+	if err := sigFile.Close(); err != nil {
+		return updater.UpdateResult{Success: false, Error: err}
+	}
+
+	// Rename the signature file to match what verifySignature expects
+	sigDest := tmpName + ".sig"
+	if err := os.Rename(sigName, sigDest); err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to rename signature file: %v", err)}
+	}
+	defer func() {
+		_ = os.Remove(sigDest)
+	}()
 
 	if err := verifySignature(tmpName); err != nil {
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("signature verification failed: %v", err)}

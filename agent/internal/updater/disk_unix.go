@@ -11,7 +11,7 @@ import (
 // CheckDiskSpace ensures there is at least minBytes available on the given path.
 func CheckDiskSpace(path string, minBytes uint64) error {
 	var stat syscall.Statfs_t
-	err := syscall.Statfs(path, &stat)
+	err := syscallStatfs(path, &stat)
 	if err != nil {
 		return fmt.Errorf("failed to check disk space: %v", err)
 	}

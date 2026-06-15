@@ -18,11 +18,30 @@ func TestUpdateResult(t *testing.T) {
 func TestSelfDestructPrivileges(t *testing.T) {
 	oldEuid := geteuidFunc
 	defer func() { geteuidFunc = oldEuid }()
+	oldGoos := goosFunc
+	defer func() { goosFunc = oldGoos }()
+	oldExec := execCommand
+	defer func() { execCommand = oldExec }()
 
+	// Test Unix non-root
+	goosFunc = func() string { return "linux" }
 	geteuidFunc = func() int { return 1000 }
 	err := SelfDestruct()
-	if err == nil || err.Error() != "self destruct requires root privileges" {
+	if err == nil || err.Error() != "self destruct requires root/administrator privileges" {
 		t.Errorf("Expected root privilege error, got %v", err)
+	}
+
+	// Test Windows non-admin
+	goosFunc = func() string { return "windows" }
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		if name == "net" {
+			return exec.Command("false") // simulates non-admin
+		}
+		return getMockCommandNoCtx(name, arg...)
+	}
+	err = SelfDestruct()
+	if err == nil || err.Error() != "self destruct requires root/administrator privileges" {
+		t.Errorf("Expected admin privilege error, got %v", err)
 	}
 }
 

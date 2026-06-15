@@ -33,7 +33,7 @@ func (m *WindowsManager) ApplyUpdates(ctx context.Context, packages []string) (U
 param([string]$PackagesJson)
 if (!(Get-Module -ListAvailable -Name PSWindowsUpdate)) {
 	$mod = Find-Module -Name PSWindowsUpdate -Repository PSGallery
-	if ($mod.Author -match "Michal Gajda") {
+	if ($mod.Author -eq "Michal Gajda") {
 		Install-Module -Name PSWindowsUpdate -Repository PSGallery -Force -AcceptLicense
 	} else {
 		throw "Untrusted PSWindowsUpdate author"

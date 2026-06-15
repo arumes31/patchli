@@ -22,8 +22,11 @@ func TestGetOrGenerate(t *testing.T) {
 
 		idFile = filepath.Join(tmpDir, "node_id")
 
-		id := GetOrGenerate()
-		if _, err := uuid.Parse(id); err != nil {
+		id, err := GetOrGenerate()
+		if err != nil {
+			t.Errorf("GetOrGenerate() returned error: %v", err)
+		}
+		if _, parseErr := uuid.Parse(id); parseErr != nil {
 			t.Errorf("GetOrGenerate() returned invalid UUID: %s", id)
 		}
 
@@ -50,7 +53,10 @@ func TestGetOrGenerate(t *testing.T) {
 			t.Fatalf("failed to write mock id: %v", err)
 		}
 
-		id := GetOrGenerate()
+		id, err := GetOrGenerate()
+		if err != nil {
+			t.Errorf("GetOrGenerate() returned error: %v", err)
+		}
 		if id != expectedID {
 			t.Errorf("GetOrGenerate() mismatch: expected %s, got %s", expectedID, id)
 		}
@@ -68,8 +74,11 @@ func TestGetOrGenerate(t *testing.T) {
 			t.Fatalf("failed to write invalid id: %v", err)
 		}
 
-		id := GetOrGenerate()
-		if _, err := uuid.Parse(id); err != nil {
+		id, err := GetOrGenerate()
+		if err != nil {
+			t.Errorf("GetOrGenerate() returned error: %v", err)
+		}
+		if _, parseErr := uuid.Parse(id); parseErr != nil {
 			t.Errorf("GetOrGenerate() returned invalid UUID: %s", id)
 		}
 		if id == "invalid-uuid" {

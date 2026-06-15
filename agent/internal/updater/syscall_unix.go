@@ -5,6 +5,6 @@ package updater
 
 import "syscall"
 
-func syscallStatfs(path string, stat *syscall.Statfs_t) error {
+var syscallStatfs = func(path string, stat *syscall.Statfs_t) error {
 	return syscall.Statfs(path, stat)
 }

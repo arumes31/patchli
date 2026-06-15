@@ -28,12 +28,18 @@ func TestGetOrGenerateIdentity(t *testing.T) {
 	// identity.GetOrGenerate uses a hardcoded path or env var.
 	// Since we can't easily change the path in identity package without refactoring,
 	// we just test it doesn't crash and returns something.
-	id1 := identity.GetOrGenerate()
+	id1, err := identity.GetOrGenerate()
+	if err != nil {
+		t.Fatalf("Identity GetOrGenerate returned error: %v", err)
+	}
 	if id1 == "" {
 		t.Fatal("Identity should not be empty")
 	}
 
-	id2 := identity.GetOrGenerate()
+	id2, err := identity.GetOrGenerate()
+	if err != nil {
+		t.Fatalf("Identity GetOrGenerate returned error: %v", err)
+	}
 	if id1 != id2 {
 		t.Errorf("Identity changed: %s vs %s", id1, id2)
 	}

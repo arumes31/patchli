@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 )
 
+// stateFile is set by platform-specific init() in state_unix.go / state_windows.go
+var stateFile string
+
 // State represents the persistent state of a patch job.
 type State struct {
 	JobID     string   `json:"job_id"`
@@ -51,5 +54,9 @@ func LoadState() (*State, error) {
 
 // ClearState removes the state file after a job is successfully completed and reported.
 func ClearState() error {
-	return os.Remove(stateFile)
+	err := os.Remove(stateFile)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }

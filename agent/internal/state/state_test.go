@@ -58,8 +58,33 @@ func TestState(t *testing.T) {
 	}
 }
 
+func TestClearStateIdempotent(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	oldStateFile := stateFile
+	stateFile = filepath.Join(tmpDir, "state.json")
+	defer func() { stateFile = oldStateFile }()
+
+	// ClearState on a non-existent file should not return an error
+	if err := ClearState(); err != nil {
+		t.Errorf("ClearState should not fail when file doesn't exist: %v", err)
+	}
+
+	// Calling ClearState again should still succeed
+	if err := ClearState(); err != nil {
+		t.Errorf("ClearState should be idempotent: %v", err)
+	}
+}
+
 func TestLoadStateInvalidJSON(t *testing.T) {
-	tmpDir, _ := os.MkdirTemp("", "patchli-test-*")
+	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
 	defer os.RemoveAll(tmpDir)
 
 	oldStateFile := stateFile
@@ -67,7 +92,7 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 	defer func() { stateFile = oldStateFile }()
 
 	_ = os.WriteFile(stateFile, []byte("{invalid"), 0644)
-	_, err := LoadState()
+	_, err = LoadState()
 	if err == nil {
 		t.Error("LoadState should have failed for invalid JSON")
 	}

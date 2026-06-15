@@ -35,15 +35,14 @@ func TestStatePermissionsUnix(t *testing.T) {
 		t.Fatalf("SaveState failed: %v", err)
 	}
 
-	// Check directory permissions (0750)
+	// Check directory permissions (0750) using bitwise check to account for umask
 	dirInfo, err := os.Stat(filepath.Dir(statePath))
 	if err != nil {
 		t.Fatalf("Failed to stat directory: %v", err)
 	}
-	// On some systems/filesystems, the actual permissions might be affected by umask
-	// but we expect at most 0750 as requested in MkdirAll
-	if dirInfo.Mode().Perm() != 0750 {
-		t.Errorf("Expected directory permissions 0750, got %o", dirInfo.Mode().Perm())
+	// Ensure no extra bits are set beyond 0750
+	if dirInfo.Mode().Perm()&^0750 != 0 {
+		t.Errorf("Expected directory permissions at most 0750, got %o (extra bits: %o)", dirInfo.Mode().Perm(), dirInfo.Mode().Perm()&^0750)
 	}
 
 	// Check file permissions (0600)

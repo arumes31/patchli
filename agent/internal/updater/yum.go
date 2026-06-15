@@ -13,7 +13,7 @@ type YumManager struct{}
 
 func (m *YumManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 	cmd := execCommandContext(ctx, "yum", "check-update", "-y")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -33,7 +33,7 @@ func (m *YumManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 	}
 
 	cmd := execCommandContext(ctx, "yum", args...)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -49,19 +49,28 @@ func (m *YumManager) RebootRequired() bool {
 			return true
 		}
 	}
-	
+
 	unameOut, err := execCommand("uname", "-r").Output()
 	if err == nil {
 		runningKernel := strings.TrimSpace(string(unameOut))
+		// Extract only the first line (most recent kernel) and compare directly
 		rpmOut, err := execCommand("rpm", "-q", "--last", "kernel").Output()
 		if err == nil {
-			installedKernel := strings.TrimSpace(string(rpmOut))
-			if !strings.Contains(installedKernel, runningKernel) {
-				return true
+			lines := strings.Split(strings.TrimSpace(string(rpmOut)), "\n")
+			if len(lines) > 0 {
+				latestKernelLine := strings.Fields(lines[0])
+				if len(latestKernelLine) > 0 {
+					latestKernel := latestKernelLine[0]
+					// kernel-VERSION-ARCH -> extract VERSION-ARCH
+					parts := strings.SplitN(latestKernel, "kernel-", 2)
+					if len(parts) == 2 && parts[1] != runningKernel {
+						return true
+					}
+				}
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -87,4 +96,3 @@ func (m *YumManager) Cleanup(ctx context.Context) error {
 	}
 	return execCommandContext(ctx, "yum", "clean", "all").Run()
 }
-
