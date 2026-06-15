@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -160,6 +161,13 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 		}
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		log.Printf("Invalid BaseURL rejected: %q", baseURL)
+		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
+		return
+	}
+
 	data := struct{ BaseURL string }{BaseURL: baseURL}
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Error executing template: %v", err)

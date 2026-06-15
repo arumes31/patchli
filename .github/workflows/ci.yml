@@ -123,25 +123,45 @@ jobs:
       - name: Run Server in Background
         run: |
           ./server/server_bin &
-          sleep 5
+          SERVER_PID=$!
+          echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          # Wait for server to be healthy and responsive
+          for i in {1..15}; do
+            RESPONSE=$(curl -s http://localhost:8080/health 2>/dev/null) || true
+            if echo "$RESPONSE" | grep -qi "ok\|healthy\|alive\|running"; then
+              echo "Server is healthy and responsive (attempt $i)"
+              break
+            fi
+            if [ "$i" -eq 15 ]; then
+              echo "Server failed to become healthy after 30s"
+              exit 1
+            fi
+            sleep 2
+          done
         env:
           DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
           REDIS_URL: localhost:6379
-          JWT_SECRET: "atleast16charslongsecret"
+          JWT_SECRET: "$(openssl rand -base64 32)"
 
       - name: Chaos Test - Kill Redis
         run: |
-          for i in {1..5}; do curl -f http://localhost:8080/health && break || sleep 2; done
-          sudo iptables -A INPUT -p tcp --dport 6379 -j DROP
+          docker stop ${{ job.services.redis.id }} || true
           sleep 2
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
-          if [ "$STATUS" -ne 200 ]; then
-            echo "Expected degraded but got $STATUS"
+          if [ "$STATUS" -lt 500 ]; then
+            echo "Expected degraded (5xx) but got $STATUS"
             exit 1
           fi
-          sudo iptables -D INPUT -p tcp --dport 6379 -j DROP
+          docker start ${{ job.services.redis.id }} || true
           sleep 2
           curl -f http://localhost:8080/health || exit 1
+
+      - name: Cleanup Server Process
+        if: always()
+        run: |
+          if [ -n "$SERVER_PID" ]; then
+            kill $SERVER_PID 2>/dev/null || true
+          fi
 
   fuzz_test:
     name: Fuzz Testing

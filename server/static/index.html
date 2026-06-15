@@ -177,8 +177,8 @@
                     Live Patch Logs
                 </h3>
                 <div class="custom-scrollbar bg-[#050b14] text-emerald-400 data-mono p-4 h-64 overflow-y-scroll rounded-xl border border-teal-900/30 text-[0.8rem] leading-relaxed" id="log-terminal">
-                    <span class="opacity-30">[System]</span> Initializing organic stream...<br/>
-                    <span class="opacity-30">[System]</span> Waiting for patch logs to synchronize...<br/>
+                    <div class="log-entry"><span class="opacity-30">[System]</span> Initializing organic stream...</div>
+                    <div class="log-entry"><span class="opacity-30">[System]</span> Waiting for patch logs to synchronize...</div>
                 </div>
             </div>
             
@@ -192,7 +192,6 @@
                                 <th onclick="handleSort('status')" data-tooltip="Current health of the agent">Status <span id="sort-status"></span></th>
                                 <th onclick="handleSort('os')">OS Flavor <span id="sort-os"></span></th>
                                 <th onclick="handleSort('kernel')" data-tooltip="Running Kernel Version">Kernel <span id="sort-kernel"></span></th>
-                                <th data-tooltip="24H Activity Trend">Activity Trend</th>
                                 <th onclick="handleSort('pulse')" data-tooltip="Time since last check-in">Pulse <span id="sort-pulse"></span></th>
                             </tr>
                         </thead>
@@ -203,7 +202,6 @@
                                 <td><div class="skeleton h-5 w-20 rounded-full"></div></td>
                                 <td><div class="skeleton h-4 w-24"></div></td>
                                 <td><div class="skeleton h-4 w-36"></div></td>
-                                <td><div class="skeleton h-6 w-16"></div></td>
                                 <td><div class="skeleton h-4 w-16"></div></td>
                             </tr>
                             <tr id="skeleton-row-2">
@@ -211,7 +209,6 @@
                                 <td><div class="skeleton h-5 w-16 rounded-full"></div></td>
                                 <td><div class="skeleton h-4 w-28"></div></td>
                                 <td><div class="skeleton h-4 w-32"></div></td>
-                                <td><div class="skeleton h-6 w-16"></div></td>
                                 <td><div class="skeleton h-4 w-20"></div></td>
                             </tr>
                         </tbody>
@@ -252,27 +249,33 @@
         }
 
         function addLog(msg, type = 'system') {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            
             const span = document.createElement('span');
             span.className = type === 'system' ? 'opacity-30' : 'text-teal-500';
             span.textContent = `[${type.charAt(0).toUpperCase() + type.slice(1)}] `;
             
             const content = document.createTextNode(msg);
-            const br = document.createElement('br');
             
-            terminal.appendChild(span);
-            terminal.appendChild(content);
-            terminal.appendChild(br);
+            entry.appendChild(span);
+            entry.appendChild(content);
+            terminal.appendChild(entry);
             
-            // Keep only last 100 lines to prevent DOM bloat
-            if (terminal.childNodes.length > 300) {
-                for (let i = 0; i < 3; i++) terminal.firstChild.remove();
+            // Keep only last 100 entries to prevent DOM bloat
+            const entries = terminal.querySelectorAll('.log-entry');
+            if (entries.length > 100) {
+                entries[0].remove();
             }
             terminal.scrollTop = terminal.scrollHeight;
         }
 
         async function updateStats() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
             try {
-                const res = await fetch('/api/v1/stats');
+                const res = await fetch('/api/v1/stats', { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if(!res.ok) throw new Error("API Error");
                 const data = await res.json();
                 
@@ -287,54 +290,19 @@
                 // Connection is healthy
                 offlineBanner.classList.remove('visible');
             } catch (err) {
-                console.error('Failed to fetch stats:', err);
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    console.error('Fetch stats timed out');
+                } else {
+                    console.error('Failed to fetch stats:', err);
+                }
                 offlineBanner.classList.add('visible');
             }
         }
 
-        // 7. Sparklines Drawing
-        function drawSparkline(canvasId, dataPoints) {
-            const canvas = document.getElementById(canvasId);
-            if (!canvas) return;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-            const h = canvas.height;
-            
-            ctx.clearRect(0, 0, w, h);
-            if (!dataPoints || dataPoints.length === 0) return;
-            
-            const max = Math.max(...dataPoints, 1);
-            const min = 0;
-            const stepX = w / (dataPoints.length - 1);
-            
-            ctx.beginPath();
-            ctx.moveTo(0, h - ((dataPoints[0] - min) / (max - min)) * h);
-            
-            for (let i = 1; i < dataPoints.length; i++) {
-                ctx.lineTo(i * stepX, h - ((dataPoints[i] - min) / (max - min)) * h);
-            }
-            
-            ctx.strokeStyle = '#34d399';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-        }
-
-        // 39. Lazy Loaded Graphs via IntersectionObserver
-        const sparklineObserver = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const canvas = entry.target;
-                    // In a real app, you'd fetch node-specific trends. Using mock data here.
-                    const mockData = Array.from({length: 10}, () => Math.floor(Math.random() * 100));
-                    drawSparkline(canvas.id, mockData);
-                    sparklineObserver.unobserve(canvas); // Only draw once
-                }
-            });
-        });
-
         function renderNodes() {
             if (!nodesData || nodesData.length === 0) {
-                nodeTableBody.innerHTML = `<tr><td colspan="6" class="text-center opacity-40 py-8">No nodes detected. Waiting for heartbeats...</td></tr>`;
+                nodeTableBody.innerHTML = `<tr><td colspan="5" class="text-center opacity-40 py-8">No nodes detected. Waiting for heartbeats...</td></tr>`;
                 return;
             }
 
@@ -380,7 +348,6 @@
                     <td><span class="status-badge ${statusClass}"><span class="pulse-dot ${statusClass}"></span> ${displayStatus}</span></td>
                     <td>${node.os || 'Unknown'}</td>
                     <td class="opacity-60 text-xs">${node.kernel || 'N/A'}</td>
-                    <td><canvas id="spark-${rowId}" width="60" height="20"></canvas></td>
                     <td class="text-teal-400/60 italic text-xs">${timeAgoStr}</td>
                 `;
 
@@ -389,29 +356,10 @@
                     tr = document.createElement('tr');
                     tr.id = rowId;
                     tr.innerHTML = htmlContent;
-                    // Observe new canvas
-                    setTimeout(() => {
-                        const canvas = document.getElementById(`spark-${rowId}`);
-                        if(canvas) sparklineObserver.observe(canvas);
-                    }, 0);
                 } else {
                     // Update existing row if content changed (simple check)
                     if (tr.dataset.contentHash !== htmlContent) {
-                        const oldCanvas = tr.querySelector('canvas');
-                        let needsRedraw = !oldCanvas;
-                        
                         tr.innerHTML = htmlContent;
-                        
-                        if (!needsRedraw) {
-                           const newCanvasContainer = tr.querySelector('td:nth-child(5)');
-                           newCanvasContainer.innerHTML = '';
-                           newCanvasContainer.appendChild(oldCanvas);
-                        } else {
-                           setTimeout(() => {
-                               const canvas = document.getElementById(`spark-${rowId}`);
-                               if(canvas) sparklineObserver.observe(canvas);
-                           }, 0);
-                        }
                     }
                 }
                 tr.dataset.contentHash = htmlContent;
@@ -431,13 +379,22 @@
         }
 
         async function fetchNodesData() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
             try {
-                const res = await fetch('/api/v1/nodes');
+                const res = await fetch('/api/v1/nodes', { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if(!res.ok) throw new Error("API Error");
                 nodesData = await res.json();
                 renderNodes();
             } catch (err) {
-                console.error('Failed to fetch nodes:', err);
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    console.error('Fetch nodes timed out');
+                    offlineBanner.classList.add('visible');
+                } else {
+                    console.error('Failed to fetch nodes:', err);
+                }
             }
         }
 

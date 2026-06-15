@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Patchli - Secure Login</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <script src="/assets/js/tailwind.js"></script>
-    <link href="/assets/css/fonts.css" rel="stylesheet"/>
+    <link href="/assets/css/fonts.css" rel="stylesheet" />
     <style>
-        body { 
-            font-family: 'Quicksand', sans-serif; 
-            background: radial-gradient(circle at top left, #0f172a, #134e4a); 
-            color: #ccfbf1; 
-            min-height: 100vh; 
-            margin: 0; 
-            display: flex; 
-            align-items: center; 
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background: radial-gradient(circle at top left, #0f172a, #134e4a);
+            color: #ccfbf1;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
             justify-content: center;
             overflow: hidden;
             position: relative;
-        } 
-        
+        }
+
         /* Animated Background Particles */
         .bg-glow {
             position: absolute;
@@ -31,6 +32,7 @@
             z-index: 0;
             overflow: hidden;
         }
+
         .particle {
             position: absolute;
             background: rgba(20, 184, 166, 0.1);
@@ -38,25 +40,33 @@
             filter: blur(40px);
             animation: drift 20s infinite alternate ease-in-out;
         }
+
         @keyframes drift {
-            from { transform: translate(0, 0) scale(1); }
-            to { transform: translate(100px, 100px) scale(1.5); }
+            from {
+                transform: translate(0, 0) scale(1);
+            }
+
+            to {
+                transform: translate(100px, 100px) scale(1.5);
+            }
         }
 
-        .glass-panel { 
-            background: rgba(15, 23, 42, 0.6); 
-            backdrop-filter: blur(24px); 
-            border: 1px solid rgba(20, 184, 166, 0.2); 
-            border-radius: 2rem; 
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(24px);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            border-radius: 2rem;
             width: 100%;
             max-width: 400px;
             padding: 3rem;
             z-index: 10;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
-        
-        .data-mono { font-family: 'JetBrains Mono', monospace; }
-        
+
+        .data-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
         input {
             background: rgba(15, 23, 42, 0.4);
             border: 1px solid rgba(20, 184, 166, 0.1);
@@ -67,12 +77,13 @@
             outline: none;
             transition: all 0.3s ease;
         }
-        input:focus { 
-            border-color: #5eead4; 
+
+        input:focus {
+            border-color: #5eead4;
             background: rgba(15, 23, 42, 0.6);
             box-shadow: 0 0 15px rgba(20, 184, 166, 0.1);
         }
-        
+
         button.primary {
             background: linear-gradient(135deg, #10b981, #14b8a6);
             color: #fff;
@@ -85,11 +96,12 @@
             letter-spacing: 0.1em;
             margin-top: 1.5rem;
         }
-        button.primary:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 0 25px rgba(16, 185, 129, 0.5); 
+
+        button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
         }
-        
+
         .logo-glow {
             background: linear-gradient(to right, #5eead4, #10b981);
             -webkit-background-clip: text;
@@ -97,33 +109,47 @@
             -webkit-text-fill-color: transparent;
             filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.3));
         }
+
+        .login-error {
+            color: #fca5a5;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+            text-align: center;
+        }
     </style>
 </head>
+
 <body>
     <div class="bg-glow">
         <div class="particle" style="width: 400px; height: 400px; top: -100px; left: -100px;"></div>
-        <div class="particle" style="width: 300px; height: 300px; bottom: -50px; right: -50px; animation-delay: -5s;"></div>
+        <div class="particle" style="width: 300px; height: 300px; bottom: -50px; right: -50px; animation-delay: -5s;">
+        </div>
         <div class="particle" style="width: 200px; height: 200px; top: 40%; left: 60%; animation-delay: -10s;"></div>
     </div>
 
     <div class="glass-panel text-center">
         <header class="mb-10">
             <div class="flex flex-col items-center gap-4">
-                <img src="/assets/img/logo.png" alt="Patchli Logo" class="w-20 h-20 object-contain drop-shadow-[0_0_15px_rgba(20,184,166,0.3)]">
+                <img src="/assets/img/logo.png" alt="Patchli Logo"
+                    class="w-20 h-20 object-contain drop-shadow-[0_0_15px_rgba(20,184,166,0.3)]">
                 <h1 class="text-3xl font-bold logo-glow">Patchli</h1>
             </div>
         </header>
 
-        <form class="space-y-6 text-left">
+        <form id="login-form" class="space-y-6 text-left" onsubmit="handleLogin(event)">
             <div>
-                <label class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Username</label>
-                <input type="text" placeholder="Username or Email" class="data-mono text-sm"/>
+                <label for="username"
+                    class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Username</label>
+                <input type="text" id="username" name="username" placeholder="Username or Email"
+                    class="data-mono text-sm" />
             </div>
             <div>
-                <label class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Password</label>
-                <input type="password" placeholder="••••••••" class="data-mono text-sm"/>
+                <label for="password"
+                    class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Password</label>
+                <input type="password" id="password" name="password" placeholder="••••••••" class="data-mono text-sm" />
             </div>
-            
+            <p id="login-error" class="login-error hidden"></p>
+
             <button type="submit" class="primary data-mono">Sign In</button>
         </form>
 
@@ -131,5 +157,43 @@
             <p class="text-[10px] data-mono text-teal-500/10">v2.0.1-LTS</p>
         </footer>
     </div>
+
+    <script>
+        async function handleLogin(event) {
+            event.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorEl = document.getElementById('login-error');
+            errorEl.classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.token) {
+                        localStorage.setItem('token', data.token);
+                        window.location.href = '/';
+                    } else {
+                        errorEl.textContent = 'Unexpected response from server';
+                        errorEl.classList.remove('hidden');
+                    }
+                } else {
+                    const errData = await res.json().catch(() => ({}));
+                    errorEl.textContent = errData.error || 'Invalid credentials';
+                    errorEl.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorEl.textContent = 'Connection failed. Please try again.';
+                errorEl.classList.remove('hidden');
+            }
+        }
+    </script>
 </body>
+
 </html>
