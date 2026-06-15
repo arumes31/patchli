@@ -1,0 +1,3 @@
+## 2025-06-15 - Resolving GoSec false positives
+**Learning:** `gosec` aggressively flags URLs constructed using string concatenation as SSRF risks (G704) and `log.Printf` with formatted strings as log injection risks (G706), even when the inputs are strictly internal variables. It also complains about `json.NewEncoder(w).Encode(pair)` returning unhandled errors (G104) and exposing structs with sensitive-sounding fields (G117).
+**Action:** When these are intentional or proven safe by context, suppress them using `// #nosec [RuleID] -- [Justification]` rather than refactoring working code unnecessarily.
