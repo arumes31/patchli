@@ -52,7 +52,7 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(pair) // #nosec G117 G104 -- returning the token is intended
+	json.NewEncoder(w).Encode(pair) // #nosec G117 G104
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -99,5 +99,5 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(pair) // #nosec G117 G104 -- returning the token is intended
+	json.NewEncoder(w).Encode(pair) // #nosec G117 G104
 }
