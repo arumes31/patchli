@@ -77,7 +77,7 @@ func TestDetectPackageManager(t *testing.T) {
 		}, false, "*updater.ZypperManager", false},
 		{"windows", func(n string) (os.FileInfo, error) {
 			return nil, os.ErrNotExist
-		}, true, "*updater.WindowsManager", false},
+		}, true, "*updater.WindowsManager", true},
 		{"unsupported", func(n string) (os.FileInfo, error) {
 			return nil, os.ErrNotExist
 		}, false, "", true},
