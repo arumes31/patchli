@@ -1,6 +1,7 @@
 package orchestration
 
 import (
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type WorkerPool struct {
 	pauseCond       *sync.Cond
 	mu              sync.Mutex
 	stopChan        chan struct{}
+	wg              sync.WaitGroup
 }
 
 func NewWorkerPool(maxWorkers int) *WorkerPool {
@@ -40,16 +42,35 @@ func NewWorkerPool(maxWorkers int) *WorkerPool {
 
 func (wp *WorkerPool) Start() {
 	for i := 0; i < wp.maxWorkers; i++ {
+		wp.wg.Add(1)
 		go wp.worker()
 	}
 }
 
 func (wp *WorkerPool) Stop() {
+	// Resume all paused groups so workers can exit
+	wp.mu.Lock()
+	for gid := range wp.pausedGroups {
+		wp.pausedGroups[gid] = false
+	}
+	wp.pauseCond.Broadcast()
+	wp.mu.Unlock()
+
 	close(wp.stopChan)
 }
 
-func (wp *WorkerPool) Submit(job models.Job) {
-	wp.jobQueue <- job
+// Wait blocks until all workers have finished. Must be called after Stop().
+func (wp *WorkerPool) Wait() {
+	wp.wg.Wait()
+}
+
+func (wp *WorkerPool) Submit(job models.Job) error {
+	select {
+	case wp.jobQueue <- job:
+		return nil
+	case <-time.After(30 * time.Second):
+		return errors.New("job submission timed out: queue is full")
+	}
 }
 
 func (wp *WorkerPool) PauseGroup(groupID int) {
@@ -68,6 +89,7 @@ func (wp *WorkerPool) ResumeGroup(groupID int) {
 }
 
 func (wp *WorkerPool) worker() {
+	defer wp.wg.Done()
 	for {
 		select {
 		case <-wp.stopChan:
@@ -118,8 +140,18 @@ func (wp *WorkerPool) processJob(job models.Job) {
 		if now.Before(job.MaintenanceWindow.StartTime) {
 			log.Printf("Job %s delayed: Outside window.", job.ID)
 			go func(j models.Job) {
-				time.Sleep(10 * time.Second)
-				wp.Submit(j)
+				delay := time.Until(j.MaintenanceWindow.StartTime)
+				if delay < 10*time.Second {
+					delay = 10 * time.Second
+				}
+				timer := time.NewTimer(delay)
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+					wp.Submit(j)
+				case <-wp.stopChan:
+					log.Printf("Job %s cancelled: pool is stopping.", j.ID)
+				}
 			}(job)
 			return
 		}
@@ -171,10 +203,15 @@ func (wp *WorkerPool) processJob(job models.Job) {
 
 func (wp *WorkerPool) monitorJobExpiration(job models.Job) {
 	timer := time.NewTimer(jobExpirationTimeout)
-	<-timer.C
+	defer timer.Stop()
 
-	running, err := db.IsJobRunning(job.ID)
-	if err == nil && running {
-		log.Printf("Job %s timed out after %v", job.ID, jobExpirationTimeout)
+	select {
+	case <-timer.C:
+		running, err := db.IsJobRunning(job.ID)
+		if err == nil && running {
+			log.Printf("Job %s timed out after %v", job.ID, jobExpirationTimeout)
+		}
+	case <-wp.stopChan:
+		// Pool is stopping; timer cancelled via defer
 	}
 }

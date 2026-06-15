@@ -55,8 +55,8 @@ func TestUpdateNodeStatus(t *testing.T) {
 	t.Run("Nil DB", func(t *testing.T) {
 		DB = nil
 		err := UpdateNodeStatus(mac, hostname, osName, osVersion, kernel, status)
-		if err != nil {
-			t.Errorf("error was not expected with nil DB: %s", err)
+		if err == nil {
+			t.Error("expected error when DB is nil")
 		}
 		DB = db // Restore for next tests
 	})
@@ -133,8 +133,8 @@ func TestIsJobRunning(t *testing.T) {
 	t.Run("Nil DB", func(t *testing.T) {
 		DB = nil
 		running, err := IsJobRunning(jobID)
-		if err != nil {
-			t.Errorf("error was not expected with nil DB: %s", err)
+		if err == nil {
+			t.Error("expected error when DB is nil")
 		}
 		if running {
 			t.Error("expected false for nil DB")

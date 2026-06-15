@@ -90,10 +90,12 @@ func ValidateToken(tokenStr string) (*jwt.MapClaims, error) {
 }
 
 func ValidateRegistration(group, timestamp, signature string) bool {
+	// Always perform both checks to avoid timing leaks
 	t, err := time.Parse(time.RFC3339, timestamp)
-	if err != nil || time.Since(t) > 10*time.Minute {
-		return false
-	}
+	timestampValid := err == nil && time.Since(t) <= 10*time.Minute && time.Until(t) <= 5*time.Minute
+
 	expected := GenerateRegistrationSignature(group, timestamp)
-	return hmac.Equal([]byte(signature), []byte(expected))
+	signatureValid := hmac.Equal([]byte(signature), []byte(expected))
+
+	return timestampValid && signatureValid
 }

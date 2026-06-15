@@ -8,11 +8,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/gorilla/websocket"
 	"github.com/arumes31/patchli/server/internal/db"
 	"github.com/arumes31/patchli/server/internal/fleet"
 	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
 )
 
 var jwtSecret []byte
@@ -52,9 +52,9 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized - Invalid Header", http.StatusUnauthorized)
 		return
 	}
-	
+
 	tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
-	
+
 	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
@@ -83,7 +83,9 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if macAddr != "" {
 				fleet.Registry.Unregister(macAddr)
 				log.Printf("Agent %s disconnected", macAddr)
-				_ = db.UpdateNodeStatus(macAddr, "", "", lastOS, "", "offline")
+				if err := db.UpdateNodeStatus(macAddr, "", "", lastOS, "", "offline"); err != nil {
+					log.Printf("Failed to update node status for %s on disconnect: %v", macAddr, err)
+				}
 			}
 			break
 		}
@@ -107,11 +109,13 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			macAddr = p.MacAddress
 			lastOS = p.OSVersion
 			fleet.Registry.Register(macAddr, conn, p)
-			
-			_ = db.UpdateNodeStatus(p.MacAddress, p.Hostname, p.OS, p.OSVersion, p.Kernel, "online")
+
+			if err := db.UpdateNodeStatus(p.MacAddress, p.Hostname, p.OS, p.OSVersion, p.Kernel, "online"); err != nil {
+				log.Printf("Failed to update node status for %s: %v", p.MacAddress, err)
+			}
 
 		case "log":
 			// Handle log payload
 		}
-		}
-		}
+	}
+}

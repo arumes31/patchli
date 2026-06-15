@@ -3,14 +3,15 @@ package fleet
 import (
 	"testing"
 
-	"github.com/gorilla/websocket"
 	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/gorilla/websocket"
 )
 
 func TestAgentManager(t *testing.T) {
 	am := &AgentManager{
-		agents:  make(map[string]*websocket.Conn),
-		details: make(map[string]*models.AgentDetails),
+		agents:     make(map[string]*websocket.Conn),
+		details:    make(map[string]*models.AgentDetails),
+		activeJobs: make(map[string]string),
 	}
 
 	mac := "00:11:22:33:44:55"

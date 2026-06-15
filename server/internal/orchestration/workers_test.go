@@ -20,7 +20,9 @@ func TestWorkerPool(t *testing.T) {
 			GroupID: 1,
 			Action:  "patch",
 		}
-		wp.Submit(job)
+		if err := wp.Submit(job); err != nil {
+			t.Fatalf("Submit failed: %v", err)
+		}
 		j := <-wp.jobQueue
 		if j.ID != "job-1" {
 			t.Errorf("Expected job-1, got %s", j.ID)
@@ -153,7 +155,9 @@ func TestWorkerPoolStartStop(t *testing.T) {
 		}
 	}
 
-	wp.Submit(models.Job{ID: "picked-up", NodeMac: "mac1", GroupID: 10})
+	if err := wp.Submit(models.Job{ID: "picked-up", NodeMac: "mac1", GroupID: 10}); err != nil {
+		t.Fatalf("Submit failed: %v", err)
+	}
 
 	select {
 	case <-done:
@@ -192,8 +196,12 @@ func TestWorkerGracefulStopWithRemainingJobs(t *testing.T) {
 	wp := NewWorkerPool(1)
 
 	// Add jobs to queue before starting
-	wp.Submit(models.Job{ID: "job-1", NodeMac: "mac-1"})
-	wp.Submit(models.Job{ID: "job-2", NodeMac: "mac-2"})
+	if err := wp.Submit(models.Job{ID: "job-1", NodeMac: "mac-1"}); err != nil {
+		t.Fatalf("Submit failed: %v", err)
+	}
+	if err := wp.Submit(models.Job{ID: "job-2", NodeMac: "mac-2"}); err != nil {
+		t.Fatalf("Submit failed: %v", err)
+	}
 
 	processedCount := 0
 	var mu sync.Mutex

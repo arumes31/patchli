@@ -98,6 +98,7 @@ func main() {
 	defer cancel()
 
 	pool.Stop()
+	pool.Wait()
 	if db.DB != nil {
 		_ = db.DB.Close()
 	}

@@ -24,6 +24,10 @@ var Registry = AgentManager{
 func (am *AgentManager) Register(mac string, conn *websocket.Conn, p models.HeartbeatPayload) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
+	// Close existing connection to prevent resource leak on re-registration
+	if oldConn, ok := am.agents[mac]; ok {
+		oldConn.Close()
+	}
 	am.agents[mac] = conn
 	am.details[mac] = &models.AgentDetails{
 		Hostname:      p.Hostname,
@@ -39,9 +43,8 @@ func (am *AgentManager) Unregister(mac string) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	delete(am.agents, mac)
-	if d, ok := am.details[mac]; ok {
-		d.Status = "offline"
-	}
+	delete(am.details, mac)
+	delete(am.activeJobs, mac)
 }
 
 func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {
@@ -69,10 +72,10 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
-	am.mu.RLock()
+	am.mu.Lock()
 	conn, ok := am.agents[mac]
-	am.mu.RUnlock()
 	if !ok {
+		am.mu.Unlock()
 		return models.ErrAgentOffline
 	}
 
@@ -83,7 +86,9 @@ func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error
 		Type:    "command",
 		Payload: cmd,
 	}
-	return conn.WriteJSON(msg)
+	err := conn.WriteJSON(msg)
+	am.mu.Unlock()
+	return err
 }
 
 func (am *AgentManager) AcquireJob(mac, jobID string) bool {

@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -38,6 +40,13 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify timestamp freshness to prevent replay attacks
+	t, err := time.Parse(time.RFC3339, req.Timestamp)
+	if err != nil || time.Since(t) > 5*time.Minute || time.Until(t) > 5*time.Minute {
+		http.Error(w, "Stale or invalid timestamp", http.StatusUnauthorized)
+		return
+	}
+
 	pair, err := auth.GenerateTokenPair(req.MAC)
 	if err != nil {
 		http.Error(w, "Failed to generate tokens", http.StatusInternalServerError)
@@ -52,7 +61,13 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pair)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
+		log.Printf("Error encoding login response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+	w.Write(buf.Bytes())
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -76,13 +91,17 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 
 	// Also validate JWT signature and claims
 	claims, err := auth.ValidateToken(req.RefreshToken)
-	if err != nil || (*claims)["sub"] != req.MAC {
+	if err != nil || claims == nil || (*claims)["sub"] != req.MAC {
 		http.Error(w, "Invalid refresh token payload", http.StatusUnauthorized)
 		return
 	}
 
 	// Token rotation: delete old one
-	_ = db.DeleteRefreshToken(req.MAC, req.RefreshToken)
+	if err := db.DeleteRefreshToken(req.MAC, req.RefreshToken); err != nil {
+		log.Printf("Failed to delete old refresh token: %v", err)
+		http.Error(w, "Failed to rotate refresh token", http.StatusInternalServerError)
+		return
+	}
 
 	// Generate new pair
 	pair, err := auth.GenerateTokenPair(req.MAC)
@@ -99,5 +118,11 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pair)
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
+		log.Printf("Error encoding refresh response: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+	w.Write(buf.Bytes())
 }

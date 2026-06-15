@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -30,12 +31,30 @@ func escapePowerShell(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
+// isTrustedProxy checks if the remote address matches the TRUSTED_PROXY environment variable.
+func isTrustedProxy(remoteAddr string) bool {
+	trustedProxy := os.Getenv("TRUSTED_PROXY")
+	if trustedProxy == "" {
+		return false
+	}
+	// Strip port from remoteAddr if present
+	host := remoteAddr
+	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
+		host = remoteAddr[:idx]
+	}
+	return host == trustedProxy
+}
+
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
 	nodes := fleet.Registry.GetNodes()
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(nodes); err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(nodes); err != nil {
 		log.Printf("Error encoding nodes: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
+	w.Write(buf.Bytes())
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
@@ -66,9 +85,13 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		Recovery: rebootRequired,
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(stats); err != nil {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(stats); err != nil {
 		log.Printf("Error encoding stats: %v", err)
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
 	}
+	w.Write(buf.Bytes())
 }
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
@@ -91,13 +114,17 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
 		scheme := "http"
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" && isTrustedProxy(r.RemoteAddr) {
 			if strings.ToLower(proto) == "https" {
 				scheme = "https"
 			}
 		} else if r.TLS != nil {
 			scheme = "https"
 		}
+		// NOTE: If TRUSTED_PROXY is not set, X-Forwarded-Proto is ignored and only r.TLS is used.
+		// This assumes no reverse proxy is in front, or that the proxy terminates TLS and
+		// the server listens on HTTPS directly. Set TRUSTED_PROXY to the proxy's IP to enable
+		// X-Forwarded-Proto trust.
 		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
 	}
 
@@ -124,7 +151,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	baseURL := os.Getenv("BASE_URL")
 	if baseURL == "" {
 		scheme := "http"
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" && isTrustedProxy(r.RemoteAddr) {
 			if strings.ToLower(proto) == "https" {
 				scheme = "https"
 			}
@@ -136,6 +163,8 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	data := struct{ BaseURL string }{BaseURL: baseURL}
 	if err := tmpl.Execute(w, data); err != nil {
 		log.Printf("Error executing template: %v", err)
+		http.Error(w, "Failed to render setup page", http.StatusInternalServerError)
+		return
 	}
 }
 

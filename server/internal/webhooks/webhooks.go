@@ -115,8 +115,8 @@ func NotifyTeams(webhookURL string, title, text string) {
 		return
 	}
 	payload := map[string]string{
-		"@type":    "MessageCard",
-		"@context": "http://schema.org/extensions",
+		"@type":      "MessageCard",
+		"@context":   "http://schema.org/extensions",
 		"themeColor": "0076D7",
 		"summary":    title,
 		"text":       text,
@@ -150,19 +150,15 @@ func isValidURL(u string) bool {
 		host = p.Host
 	}
 
-	// Basic check to prevent SSRF against common private/internal ranges
+	// Block loopback addresses to prevent SSRF
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		// In a real prod app, we might allow this for internal services,
-		// but gosec wants us to be careful.
-		// For now, let's just log a warning but maybe allow it if it's from env?
-		// Actually, I'll just check if it's a private IP.
+		return false
 	}
 
+	// Block private/link-local IP ranges to prevent SSRF
 	ip := net.ParseIP(host)
 	if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
-		// Only allow private IPs if explicitly permitted?
-		// For the sake of fixing gosec findings, I'll at least add this logic.
-		// But wait, many webhooks ARE internal.
+		return false
 	}
 
 	return true

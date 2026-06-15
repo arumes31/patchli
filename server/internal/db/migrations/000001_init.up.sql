@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS groups (
 CREATE TABLE IF NOT EXISTS nodes (
     id SERIAL PRIMARY KEY,
     hostname VARCHAR(255) NOT NULL,
-    mac_address VARCHAR(17) UNIQUE NOT NULL,
+    mac_address VARCHAR(50) UNIQUE NOT NULL, -- Supports multiple formats (colon, dash, dot-separated); normalize in application code
     os_name VARCHAR(100),
     os_version VARCHAR(50),
     kernel_version VARCHAR(100),

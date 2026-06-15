@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -75,7 +76,7 @@ func runMigrations(dbURL string) error {
 // UpdateNodeStatus updates the node's heartbeat and status in the database.
 func UpdateNodeStatus(mac string, hostname string, osName string, osVersion string, kernel string, status string) error {
 	if DB == nil {
-		return nil
+		return errors.New("database not initialized")
 	}
 	query := `
 	INSERT INTO nodes (mac_address, hostname, os_name, os_version, kernel_version, status, last_heartbeat)
@@ -95,7 +96,7 @@ func UpdateNodeStatus(mac string, hostname string, osName string, osVersion stri
 // IsJobRunning checks if a job is still in 'running' state.
 func IsJobRunning(jobID string) (bool, error) {
 	if DB == nil {
-		return false, nil
+		return false, errors.New("database not initialized")
 	}
 	var status string
 	err := DB.QueryRow("SELECT status FROM audit_logs WHERE job_id = $1 ORDER BY created_at DESC LIMIT 1", jobID).Scan(&status)
@@ -116,7 +117,7 @@ func hashToken(token string) string {
 
 func StoreRefreshToken(mac, token string, expiresAt time.Time) error {
 	if DB == nil {
-		return nil
+		return errors.New("database not initialized")
 	}
 	hash := hashToken(token)
 	query := "INSERT INTO refresh_tokens (mac_address, token_hash, expires_at) VALUES ($1, $2, $3)"
@@ -126,7 +127,7 @@ func StoreRefreshToken(mac, token string, expiresAt time.Time) error {
 
 func VerifyRefreshToken(mac, token string) (bool, error) {
 	if DB == nil {
-		return false, nil
+		return false, errors.New("database not initialized")
 	}
 	hash := hashToken(token)
 	var exists bool
@@ -137,7 +138,7 @@ func VerifyRefreshToken(mac, token string) (bool, error) {
 
 func DeleteRefreshToken(mac, token string) error {
 	if DB == nil {
-		return nil
+		return errors.New("database not initialized")
 	}
 	hash := hashToken(token)
 	_, err := DB.Exec("DELETE FROM refresh_tokens WHERE mac_address = $1 AND token_hash = $2", mac, hash)
@@ -146,7 +147,7 @@ func DeleteRefreshToken(mac, token string) error {
 
 func DeleteAllRefreshTokens(mac string) error {
 	if DB == nil {
-		return nil
+		return errors.New("database not initialized")
 	}
 	_, err := DB.Exec("DELETE FROM refresh_tokens WHERE mac_address = $1", mac)
 	return err
