@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patchli - Add Agent</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <script src="/assets/js/tailwind.js"></script>
+    <link href="/assets/css/fonts.css" rel="stylesheet"/>
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background: radial-gradient(circle at top left, #0f172a, #134e4a);
+            color: #ccfbf1;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            overflow-x: hidden;
+        }
+
+        /* 5. Glassmorphism Refinement */
+        .blob-sidebar {
+            background: rgba(20, 184, 166, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-right: 1px solid rgba(20, 184, 166, 0.15);
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+        }
+        .glass-panel {
+            background: linear-gradient(145deg, rgba(15, 23, 42, 0.5), rgba(15, 23, 42, 0.8));
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(20, 184, 166, 0.15);
+            border-radius: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 19. Active Page Indicator */
+        .nav-link {
+            color: #99f6e4; text-decoration: none; padding: 0.5rem 1rem;
+            border-radius: 8px; background: transparent; transition: all 0.3s ease; font-size: 0.85rem;
+            border-left: 2px solid transparent;
+        }
+        .nav-link:hover { background: rgba(20, 184, 166, 0.1); color: #fff; }
+        .nav-link.active {
+            background: rgba(20, 184, 166, 0.15);
+            color: #fff;
+            border-left: 2px solid #5eead4;
+            box-shadow: inset 20px 0 20px -20px rgba(94, 234, 212, 0.3);
+        }
+
+        .data-mono { font-family: 'JetBrains Mono', monospace; }
+
+        select, input {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            color: #ccfbf1;
+            border-radius: 0.75rem;
+            padding: 0.75rem;
+            width: 100%;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+        select:focus, input:focus { border-color: #5eead4; }
+
+        button.primary {
+            background: linear-gradient(135deg, #14b8a6, #10b981);
+            color: #fff;
+            font-weight: 700;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+        }
+        button.primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4); }
+        button.primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: #99f6e4;
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(20, 184, 166, 0.2);
+            cursor: pointer;
+        }
+        button.secondary:hover { background: rgba(20, 184, 166, 0.1); color: #fff; }
+
+        code {
+            background: #020617;
+            color: #5eead4;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            display: block;
+            border: 1px solid rgba(20, 184, 166, 0.3);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.875rem;
+            position: relative;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+
+        /* 21. Setup Stepper styles */
+        .step-container { display: none; animation: fadeIn 0.3s ease-in-out; }
+        .step-container.active { display: block; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .step-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; position: relative;}
+        .step-nav::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 2px; background: rgba(20, 184, 166, 0.1); z-index: 0; transform: translateY(-50%); }
+        .step-indicator {
+            position: relative; z-index: 1; background: #0f172a; width: 40px; height: 40px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-weight: bold; border: 2px solid rgba(20, 184, 166, 0.3); color: #5eead4; transition: all 0.3s ease;
+        }
+        .step-indicator.completed { background: #10b981; border-color: #10b981; color: #fff; }
+        .step-indicator.active { border-color: #5eead4; box-shadow: 0 0 15px rgba(94, 234, 212, 0.4); }
+
+        /* Micro-animation for pulse */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+        .pulse-dot { position: relative; width: 8px; height: 8px; background-color: #34d399; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .pulse-dot::before {
+            content: ''; position: absolute; left: -2px; top: -2px; width: 12px; height: 12px;
+            background-color: #34d399; border-radius: 50%; animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        .pulse-dot.offline { background-color: #ef4444; }
+        .pulse-dot.offline::before { display: none; }
+    </style>
+</head>
+<body>
+    <aside class="blob-sidebar w-64 h-screen sticky top-0 flex flex-col p-6">
+        <div class="mb-8">
+            <div class="flex items-center gap-3">
+                <img src="/assets/img/logo.png" alt="Patchli Logo" class="w-10 h-10 object-contain">
+                <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-teal-300 to-emerald-500">Patchli</h1>
+            </div>
+        </div>
+        <nav class="flex flex-col gap-2 mb-12">
+            <a class="nav-link" href="/">Dashboard</a>
+            <a class="nav-link active" href="/setup">Add Agent</a>
+            <a class="nav-link" href="/groups">Groups</a>
+            <a class="nav-link" href="/settings">Settings</a>
+        </nav>
+
+        <!-- 23. Connectivity Tester -->
+        <div class="mt-auto p-4 rounded-xl bg-teal-950/40 border border-teal-900/30">
+            <h3 class="text-teal-500 text-[10px] uppercase tracking-tighter mb-2 font-bold">Control Plane Status</h3>
+            <div class="flex items-center text-sm font-semibold" id="cp-status">
+                <span class="pulse-dot offline" id="cp-dot"></span> <span id="cp-text">Checking...</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 p-8 overflow-y-auto">
+        <div class="max-w-3xl mx-auto">
+            <header class="mb-10">
+                <h2 class="text-3xl font-bold text-teal-100">Add New Agent</h2>
+                <p class="text-teal-500/60 mt-2">Deploy the Patchli agent to your infrastructure in seconds.</p>
+            </header>
+
+            <div class="glass-panel p-8">
+                <!-- Stepper Nav -->
+                <div class="step-nav mb-8">
+                    <div class="step-indicator active" id="indicator-1">1</div>
+                    <div class="step-indicator" id="indicator-2">2</div>
+                    <div class="step-indicator" id="indicator-3">3</div>
+                </div>
+
+                <!-- Step 1: Configuration -->
+                <div class="step-container active" id="step-1">
+                    <h3 class="text-xl font-bold mb-6 text-teal-200">Environment Configuration</h3>
+                    <div class="grid grid-cols-2 gap-6 mb-8">
+                        <div>
+                            <label class="text-xs uppercase tracking-widest text-teal-500/80 font-bold mb-2 block">OS Flavor</label>
+                            <select id="node-os">
+                                <option value="linux">Linux (Debian/Ubuntu/RHEL)</option>
+                                <option value="alpine">Alpine Linux</option>
+                                <option value="windows">Windows Server</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs uppercase tracking-widest text-teal-500/80 font-bold mb-2 block">Target Group</label>
+                            <select id="node-group">
+                                <option value="default">Default</option>
+                                <option value="staging">Staging</option>
+                                <option value="edge">Edge</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex justify-end">
+                        <button class="primary" onclick="goToStep(2)">Generate Command &rarr;</button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Execution -->
+                <div class="step-container" id="step-2">
+                    <h3 class="text-xl font-bold mb-2 text-teal-200">Execute Registration</h3>
+                    <p class="text-sm text-teal-100/60 mb-6">Run this command on the target server as root/administrator to securely register the node.</p>
+
+                    <div class="relative mb-8">
+                        <code id="install-command">
+                            curl -sSL {{.BaseURL}}/api/v1/setup?group=default&os=linux | sudo bash
+                        </code>
+                        <button onclick="copyCommand()" id="copy-btn" class="absolute top-4 right-4 text-xs bg-teal-500/20 hover:bg-teal-500/40 text-teal-300 px-3 py-1 rounded-md transition-colors">Copy</button>
+                    </div>
+
+                    <div class="flex justify-between">
+                        <button class="secondary" onclick="goToStep(1)">&larr; Back</button>
+                        <button class="primary" onclick="goToStep(3)">I've run the command &rarr;</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Verification -->
+                <div class="step-container" id="step-3">
+                    <h3 class="text-xl font-bold mb-2 text-teal-200">Verify Connection</h3>
+                    <p class="text-sm text-teal-100/60 mb-8">Waiting for the new agent to establish a secure heartbeat with the Control Plane...</p>
+
+                    <div class="bg-teal-950/30 border border-teal-900/30 rounded-xl p-8 text-center mb-8 flex flex-col items-center justify-center">
+                        <div id="verify-spinner" class="mb-4">
+                            <span class="w-12 h-12 border-4 border-teal-500/30 border-t-teal-400 rounded-full animate-spin block"></span>
+                        </div>
+                        <div id="verify-success" class="mb-4 hidden text-emerald-400">
+                            <svg class="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </div>
+                        <p class="data-mono text-sm text-teal-300" id="verify-text">Listening for incoming registration...</p>
+                    </div>
+
+                    <div class="flex justify-between">
+                        <button class="secondary" onclick="goToStep(2)">&larr; Back</button>
+                        <button class="primary" onclick="window.location.href='/'">Return to Dashboard</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Setup Logic
+        const osSelect = document.getElementById('node-os');
+        const groupSelect = document.getElementById('node-group');
+        const commandCode = document.getElementById('install-command');
+        const baseURL = "{{.BaseURL}}"; // Handled by Go template rendering
+        let currentStep = 1;
+
+        function updateCommand() {
+            const os = osSelect.value;
+            const group = groupSelect.value;
+            const url = `${baseURL}/api/v1/setup?group=${group}&os=${os}`;
+
+            if (os === "windows") {
+                commandCode.innerText = `Invoke-RestMethod -Uri "${url}" | Invoke-Expression`;
+            } else if (os === "alpine") {
+                commandCode.innerText = `curl -sSL ${url} | su -c sh`;
+            } else {
+                commandCode.innerText = `curl -sSL ${url} | sudo bash`;
+            }
+        }
+
+        osSelect.addEventListener('change', updateCommand);
+        groupSelect.addEventListener('change', updateCommand);
+        updateCommand();
+
+        function copyCommand() {
+            const text = commandCode.innerText.trim();
+            const btn = document.getElementById('copy-btn');
+            navigator.clipboard.writeText(text).then(() => {
+                btn.innerText = "Copied!";
+                btn.classList.add("bg-emerald-500/40", "text-emerald-100");
+                setTimeout(() => {
+                    btn.innerText = "Copy";
+                    btn.classList.remove("bg-emerald-500/40", "text-emerald-100");
+                }, 2000);
+            });
+        }
+
+        function goToStep(step) {
+            // Hide all
+            document.querySelectorAll('.step-container').forEach(el => el.classList.remove('active'));
+            // Update indicators
+            document.querySelectorAll('.step-indicator').forEach((el, index) => {
+                const stepNum = index + 1;
+                el.classList.remove('active', 'completed');
+                if (stepNum < step) el.classList.add('completed');
+                if (stepNum === step) el.classList.add('active');
+            });
+            // Show target
+            document.getElementById(`step-${step}`).classList.add('active');
+            currentStep = step;
+
+            if (step === 3) {
+                simulateVerification(); // In a real app, listen via WebSocket or poll for new node
+            }
+        }
+
+        // Mock verification for UX demonstration
+        function simulateVerification() {
+            const text = document.getElementById('verify-text');
+            const spinner = document.getElementById('verify-spinner');
+            const success = document.getElementById('verify-success');
+
+            text.innerText = "Listening for incoming registration...";
+            spinner.classList.remove('hidden');
+            success.classList.add('hidden');
+
+            // Optional: poll /api/v1/nodes to see if count increased
+            // For now, simulate success after a few seconds to show UX
+            setTimeout(() => {
+                if(currentStep === 3) {
+                    spinner.classList.add('hidden');
+                    success.classList.remove('hidden');
+                    text.innerText = "Agent successfully registered and online!";
+                }
+            }, 5000);
+        }
+
+        // 23. Live Tester (Control Plane Health)
+        async function checkControlPlane() {
+            const dot = document.getElementById('cp-dot');
+            const text = document.getElementById('cp-text');
+            try {
+                // Ping a lightweight endpoint
+                const res = await fetch('/api/v1/stats', { cache: "no-store" });
+                if (res.ok) {
+                    dot.classList.remove('offline');
+                    text.innerText = "Online & Ready";
+                    text.classList.add("text-emerald-400");
+                    text.classList.remove("text-red-400");
+                } else {
+                    throw new Error("Bad status");
+                }
+            } catch (e) {
+                dot.classList.add('offline');
+                text.innerText = "Connection Issue";
+                text.classList.remove("text-emerald-400");
+                text.classList.add("text-red-400");
+            }
+        }
+
+        // Check health immediately, then every 15s
+        checkControlPlane();
+        setInterval(checkControlPlane, 15000);
+
+    </script>
+</body>
+</html>
