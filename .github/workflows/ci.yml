@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  REGISTRATION_SECRET: "testsecret"
+  JWT_SECRET: "atleast16charslongsecret"
+
 jobs:
   lint:
     name: Linting
