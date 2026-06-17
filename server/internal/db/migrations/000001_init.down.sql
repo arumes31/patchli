@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS schedules;
+DROP TABLE IF EXISTS patch_baseline;
+DROP TABLE IF EXISTS nodes;
+DROP TABLE IF EXISTS groups;
