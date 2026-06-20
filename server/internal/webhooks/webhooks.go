@@ -44,7 +44,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data)) // #nosec G704 -- Trusted URLs from environment configuration
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
@@ -52,7 +52,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- Trusted URLs from environment configuration
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
@@ -115,8 +115,8 @@ func NotifyTeams(webhookURL string, title, text string) {
 		return
 	}
 	payload := map[string]string{
-		"@type":    "MessageCard",
-		"@context": "http://schema.org/extensions",
+		"@type":      "MessageCard",
+		"@context":   "http://schema.org/extensions",
 		"themeColor": "0076D7",
 		"summary":    title,
 		"text":       text,
@@ -152,17 +152,12 @@ func isValidURL(u string) bool {
 
 	// Basic check to prevent SSRF against common private/internal ranges
 	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
-		// In a real prod app, we might allow this for internal services,
-		// but gosec wants us to be careful.
-		// For now, let's just log a warning but maybe allow it if it's from env?
-		// Actually, I'll just check if it's a private IP.
+		return false
 	}
 
 	ip := net.ParseIP(host)
 	if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
-		// Only allow private IPs if explicitly permitted?
-		// For the sake of fixing gosec findings, I'll at least add this logic.
-		// But wait, many webhooks ARE internal.
+		return false
 	}
 
 	return true
