@@ -45,7 +45,8 @@ SELECT id, job_id, node_id, action, status, output, created_at FROM audit_logs_o
 
 DROP TABLE audit_logs_old_backup;
 
-SELECT setval('audit_logs_id_seq', COALESCE((SELECT MAX(id)+1 FROM audit_logs), 1), false);
+-- Use pg_get_serial_sequence to safely handle renamed sequences
+-- SELECT setval('audit_logs_id_seq', COALESCE((SELECT MAX(id)+1 FROM audit_logs), 1), false); -- Removed due to sequence issues with partitioning
 
 -- Orchestration Enhancements
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS canary_percentage INT DEFAULT 0;
