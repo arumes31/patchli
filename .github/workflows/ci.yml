@@ -75,7 +75,7 @@ jobs:
 
       - name: Test Server with Coverage
         run: |
-          go test -v -coverprofile=coverage.out ./...
+          export REGISTRATION_SECRET=testsecret JWT_SECRET=atleast16charslongsecret && go test -v -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out -o=coverage.out
           # Feature 85: Enforce 80% coverage
           total_coverage=$(grep total coverage.out | awk '{print $3}' | sed 's/%//')
@@ -84,7 +84,7 @@ jobs:
         working-directory: server
 
       - name: Test Agent
-        run: go test -v ./...
+        run: export REGISTRATION_SECRET=testsecret JWT_SECRET=atleast16charslongsecret && go test -v ./...
         working-directory: agent
 
   chaos_test:
@@ -98,6 +98,7 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
+          REGISTRATION_SECRET: "testsecret"
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
           POSTGRES_DB: patchli
@@ -125,6 +126,7 @@ jobs:
           ./server/server_bin &
           sleep 5
         env:
+          REGISTRATION_SECRET: "testsecret"
           DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
           REDIS_URL: localhost:6379
           JWT_SECRET: "atleast16charslongsecret"
@@ -154,7 +156,7 @@ jobs:
           go-version: '1.26'
 
       - name: Fuzz WebSocket Parser
-        run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
+        run: export REGISTRATION_SECRET=testsecret JWT_SECRET=atleast16charslongsecret && go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
         working-directory: server
 
   deadlock_detection:
@@ -168,5 +170,5 @@ jobs:
           go-version: '1.26'
 
       - name: Run Tests with Deadlock Detector
-        run: go test -v -race ./...
+        run: export REGISTRATION_SECRET=testsecret JWT_SECRET=atleast16charslongsecret && go test -v -race ./...
         working-directory: server
