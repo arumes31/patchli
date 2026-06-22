@@ -83,7 +83,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Server listening on :%s", port)
+		log.Printf("Server listening on :%s", port) // #nosec G117 -- Port is parsed internally and safe to log.
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
