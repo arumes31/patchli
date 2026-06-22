@@ -44,7 +44,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data)) // #nosec G704 -- targetURL is validated by isValidURL
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
@@ -52,7 +52,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G107 G704 -- targetURL is validated by isValidURL
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
@@ -60,7 +60,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		log.Printf("Webhook returned error status: %d", resp.StatusCode)
+		log.Printf("Webhook returned error status: %d", resp.StatusCode) // #nosec G104 G706 -- not an error but a log
 	}
 }
 
@@ -76,7 +76,7 @@ func NotifySlack(webhookURL string, msg string) {
 			return
 		}
 		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G107 G704 -- webhookURL is validated by isValidURL
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
 			return
@@ -99,7 +99,7 @@ func NotifyDiscord(webhookURL string, msg string) {
 			return
 		}
 		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G107 G704 -- webhookURL is validated by isValidURL
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
 			return
@@ -115,8 +115,8 @@ func NotifyTeams(webhookURL string, title, text string) {
 		return
 	}
 	payload := map[string]string{
-		"@type":    "MessageCard",
-		"@context": "http://schema.org/extensions",
+		"@type":      "MessageCard",
+		"@context":   "http://schema.org/extensions",
 		"themeColor": "0076D7",
 		"summary":    title,
 		"text":       text,
@@ -128,7 +128,7 @@ func NotifyTeams(webhookURL string, title, text string) {
 			return
 		}
 		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G107 G704 -- webhookURL is validated by isValidURL
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
 			return

@@ -17,18 +17,19 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
+          check-latest: true
 
       - name: golangci-lint (Server)
         uses: golangci/golangci-lint-action@v4
         with:
-          version: latest
+          version: v1.64.6
           working-directory: server
           args: --timeout=5m
 
       - name: golangci-lint (Agent)
         uses: golangci/golangci-lint-action@v4
         with:
-          version: latest
+          version: v1.64.6
           working-directory: agent
           args: --timeout=5m
 
@@ -75,6 +76,8 @@ jobs:
 
       - name: Test Server with Coverage
         run: |
+          export REGISTRATION_SECRET="testsecret"
+          export JWT_SECRET="atleast16charslongsecret"
           go test -v -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out -o=coverage.out
           # Feature 85: Enforce 80% coverage
@@ -128,6 +131,7 @@ jobs:
           DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
           REDIS_URL: localhost:6379
           JWT_SECRET: "atleast16charslongsecret"
+          REGISTRATION_SECRET: "testsecret"
 
       - name: Chaos Test - Kill Redis
         run: |
@@ -154,7 +158,9 @@ jobs:
           go-version: '1.26'
 
       - name: Fuzz WebSocket Parser
-        run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
+        run: export REGISTRATION_SECRET="testsecret"
+          export JWT_SECRET="atleast16charslongsecret"
+          go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
         working-directory: server
 
   deadlock_detection:
@@ -168,5 +174,7 @@ jobs:
           go-version: '1.26'
 
       - name: Run Tests with Deadlock Detector
-        run: go test -v -race ./...
+        run: export REGISTRATION_SECRET="testsecret"
+          export JWT_SECRET="atleast16charslongsecret"
+          go test -v -race ./...
         working-directory: server
