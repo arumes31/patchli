@@ -79,7 +79,6 @@ jobs:
           export REGISTRATION_SECRET="testsecret"
           export JWT_SECRET="atleast16charslongsecret"
           go test -v -coverprofile=coverage.out ./... || true
-          go tool cover -func=coverage.out -o=coverage.out
         working-directory: server
 
       - name: Test Agent
