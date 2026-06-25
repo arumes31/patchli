@@ -1,9 +1,10 @@
 -- 000002_advanced_orchestration.up.sql
 -- Refactor audit_logs to use partitioning
 ALTER TABLE audit_logs RENAME TO audit_logs_old_backup;
+CREATE SEQUENCE audit_logs_id_seq START 1;
 
 CREATE TABLE audit_logs (
-    id SERIAL,
+    id INTEGER DEFAULT nextval('audit_logs_id_seq'),
     job_id VARCHAR(255),
     node_id INT REFERENCES nodes(id) ON DELETE CASCADE,
     action VARCHAR(100) NOT NULL,
