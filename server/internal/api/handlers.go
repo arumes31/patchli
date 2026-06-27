@@ -6,9 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"html/template"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
@@ -116,7 +116,6 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
-	// Security: Use html/template to prevent XSS via unescaped host headers
 	tmpl, err := template.ParseFS(static.FS, "setup.html")
 	if err != nil {
 		http.Error(w, "Failed to load setup page", http.StatusInternalServerError)
