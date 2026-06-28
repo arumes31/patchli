@@ -1,0 +1,4 @@
+## 2025-05-16 - Cross-Site Scripting (XSS) via `text/template`
+**Vulnerability:** The Setup UI endpoint (`ServeSetupUI`) in `server/internal/api/handlers.go` was using Go's `text/template` package to render `setup.html`, passing user-controlled data (the `r.Host` header) into the template.
+**Learning:** In Go, `text/template` does not perform contextual escaping of data injected into the template. If untrusted data is injected into HTML contexts (like scripts, attributes, or the body), an attacker could inject malicious scripts.
+**Prevention:** Always use `html/template` instead of `text/template` when generating HTML output in Go. `html/template` provides automatic, context-aware escaping (e.g., properly escaping characters for HTML body vs. JavaScript strings), preventing XSS vulnerabilities.
