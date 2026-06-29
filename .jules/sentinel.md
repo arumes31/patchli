@@ -1,0 +1,4 @@
+## 2025-06-29 - [XSS] Server-Side Template Rendering
+**Vulnerability:** The `ServeSetupUI` handler was rendering an HTML template using `text/template` while passing dynamic data (like `r.Host` to construct the `BaseURL`). Because `text/template` does not contextually escape input, it introduced a Server-Side Cross-Site Scripting (XSS) vulnerability.
+**Learning:** `html/template` provides automatic, context-aware escaping for HTML, Javascript, CSS, and URLs. In Go applications, it's critical to use `html/template` instead of `text/template` whenever rendering HTML content or mixing user-controlled values (like `r.Host`) into web pages.
+**Prevention:** Always use `html/template` for web responses. Verify imports when rendering `.html` files or generating dynamic web content to ensure `text/template` is not mistakenly used.
