@@ -1,0 +1,4 @@
+## 2024-05-18 - Prevent XSS in HTML Setup Template
+**Vulnerability:** The setup page (`ServeSetupUI` in `server/internal/api/handlers.go`) used `text/template` instead of `html/template` to render `setup.html`. This could allow Cross-Site Scripting (XSS) if the rendered values, such as the parsed `r.Host` value (used for `BaseURL`), were controlled by an attacker, leading to malicious script execution in a user's browser.
+**Learning:** In Go, `text/template` performs no contextual escaping. For any output that will be served as HTML to a web browser, `html/template` must be used because it automatically escapes strings to prevent XSS vulnerabilities, ensuring safety when injecting dynamic content (especially external/user-controlled inputs) into HTML.
+**Prevention:** Always use `html/template` instead of `text/template` for HTML views. Verify that `html/template` is used in all `ServeHTTP` or related functions rendering HTML.
