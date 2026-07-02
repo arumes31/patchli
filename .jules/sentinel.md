@@ -1,0 +1,4 @@
+## 2024-03-24 - HTML Template Injection (XSS) via text/template
+**Vulnerability:** The application used `text/template` instead of `html/template` to render HTML pages (specifically `setup.html`). This is dangerous because `text/template` does not perform automatic contextual escaping, meaning user-controlled variables (like URLs) could be injected into the page resulting in Cross-Site Scripting (XSS).
+**Learning:** In Go, the standard library provides two template packages: `text/template` and `html/template`. While they share the same interface, `html/template` is required for rendering HTML output as it automatically escapes data based on the context (e.g., HTML, JS, CSS, URL). Using `text/template` for HTML is a common but critical oversight.
+**Prevention:** Always use `html/template` for rendering any output that will be served as HTML. Reserve `text/template` strictly for non-HTML plain text content (like config files or emails).
