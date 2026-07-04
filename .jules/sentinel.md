@@ -1,0 +1,4 @@
+## 2024-05-18 - [XSS via text/template]
+**Vulnerability:** The application used `text/template` instead of `html/template` to render `setup.html`. The `BaseURL` data structure injected into the HTML is partially user-controlled (e.g., via `r.Host` or `X-Forwarded-Proto`), allowing an attacker to manipulate the Host header and inject malicious JavaScript.
+**Learning:** In Go, `text/template` does not apply contextual escaping for HTML, Javascript, CSS, or URLs, meaning any injected data is rendered raw. `html/template` inherently understands the structure of HTML, CSS, JavaScript, and URIs, automatically escaping inputs safely depending on their context.
+**Prevention:** Always use `html/template` when outputting HTML content, especially when any part of the rendered output might originate from user input or HTTP headers.
