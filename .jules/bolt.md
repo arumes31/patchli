@@ -1,0 +1,3 @@
+## 2025-07-08 - Optimize Aggregate Statistics Calculation Across Fleet
+**Learning:** Calculating aggregate statistics (like node status counts) by first retrieving the entire fleet as a slice creates O(N) memory allocation overhead, which is inefficient and scales poorly as the fleet grows.
+**Action:** When calculating aggregate statistics across the fleet, avoid creating O(N) slice copies of internal maps. Instead, implement specialized manager methods (like `GetStats`) that iterate directly over the data structure while holding a read lock to compute and return just the scalar aggregate values.
