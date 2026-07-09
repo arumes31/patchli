@@ -1,0 +1,3 @@
+## 2024-07-09 - Avoid O(N) map-to-slice copies for aggregate stats
+**Learning:** In Go, fetching values from an internal map (like `AgentManager.details`) by copying all entries into a new slice (e.g., using `GetNodes()`) is an O(N) operation that allocates memory proportionally to the number of active nodes. For endpoints solely interested in aggregate counts (like `HandleStats`), this slice creation is wasteful.
+**Action:** When calculating summary statistics across internal data structures, iterate over them directly inside the manager (under the appropriate read lock) and return just the aggregate results (as in the newly added `GetStats()` method).
