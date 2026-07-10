@@ -1,0 +1,4 @@
+## 2024-07-10 - Unescaped text/template rendering
+**Vulnerability:** The application uses `text/template` instead of `html/template` to render `setup.html`. The `BaseURL` data passed into the template comes from the HTTP request, which can be easily spoofed using headers like `X-Forwarded-Proto` and `Host`. This can lead to a Cross-Site Scripting (XSS) vulnerability.
+**Learning:** `text/template` does not apply contextual escaping to variables interpolated into templates, making it dangerous for HTML rendering, especially when inputs are partially or entirely user-controlled.
+**Prevention:** Always use `html/template` for rendering HTML content, which provides automatic and context-aware escaping.
