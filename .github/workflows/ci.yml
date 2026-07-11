@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  REGISTRATION_SECRET: "testsecret"
+  JWT_SECRET: "atleast16charslongsecret"
+
 jobs:
   lint:
     name: Linting
@@ -19,14 +23,14 @@ jobs:
           cache: true
 
       - name: golangci-lint (Server)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: server
           args: --timeout=5m
 
       - name: golangci-lint (Agent)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: agent
@@ -72,6 +76,11 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: Set up agent directories
+        run: |
+          sudo mkdir -p /var/lib/patchli /etc/patchli
+          sudo chmod 777 /var/lib/patchli /etc/patchli
 
       - name: Test Server with Coverage
         run: |
@@ -128,6 +137,7 @@ jobs:
           DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
           REDIS_URL: localhost:6379
           JWT_SECRET: "atleast16charslongsecret"
+          REGISTRATION_SECRET: "testsecret"
 
       - name: Chaos Test - Kill Redis
         run: |
@@ -166,6 +176,11 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: Set up agent directories
+        run: |
+          sudo mkdir -p /var/lib/patchli /etc/patchli
+          sudo chmod 777 /var/lib/patchli /etc/patchli
 
       - name: Run Tests with Deadlock Detector
         run: go test -v -race ./...
