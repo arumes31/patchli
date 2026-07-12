@@ -1,0 +1,4 @@
+## 2025-05-18 - XSS via text/template
+**Vulnerability:** The server used `text/template` instead of `html/template` when serving the setup.html page, leading to a Cross-Site Scripting (XSS) vulnerability. Since the template renders user-controlled variables (like `BaseURL` derived from `r.Host` or external headers), this could be exploited by an attacker submitting maliciously crafted data.
+**Learning:** In Go applications, developers must explicitly use `html/template` for HTML generation to automatically escape untrusted data and mitigate XSS. `text/template` lacks contextual escaping and will output raw text into the document.
+**Prevention:** Enforce the usage of `html/template` across all HTML responses and rely on Go's contextual automatic escaping feature. Avoid `text/template` for any HTML document generation.
