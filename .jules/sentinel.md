@@ -1,0 +1,4 @@
+## 2024-05-18 - Switch to html/template for HTML rendering
+**Vulnerability:** The application was using `text/template` to render HTML templates (e.g. `setup.html`). This could lead to Cross-Site Scripting (XSS) if user-controlled variables or dynamic content were rendered without proper escaping.
+**Learning:** In Go, `text/template` does not contextually escape output, which can be dangerous when generating HTML. The `html/template` package provides the same interface but automatically escapes data based on its context (e.g., inside an attribute, script tag, or standard HTML element), protecting against injection attacks.
+**Prevention:** Always use `html/template` instead of `text/template` when rendering HTML content. Ensure imports are verified during code reviews, especially when working with UI or external facing pages.
