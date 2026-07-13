@@ -1,0 +1,3 @@
+## 2024-07-13 - O(N) Slice Allocation in Fleet Statistics
+**Learning:** The `HandleStats` endpoint mapped over `fleet.Registry.GetNodes()` to calculate statistics across all active agents. `GetNodes()` creates an array of node entries dynamically (`make([]models.AgentDetails, 0, len(am.details))`). This allocation grows linearly with the number of agents connected and occurs on every request to the `HandleStats` endpoint.
+**Action:** Adding methods to manager structs that compute statistics inline from existing data structures is an important optimization pattern to avoid intermediate O(N) collections when only aggregates are needed.
