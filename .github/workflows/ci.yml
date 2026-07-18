@@ -19,14 +19,14 @@ jobs:
           cache: true
 
       - name: golangci-lint (Server)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: server
           args: --timeout=5m
 
       - name: golangci-lint (Agent)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           working-directory: agent
@@ -84,7 +84,10 @@ jobs:
         working-directory: server
 
       - name: Test Agent
-        run: go test -v ./...
+        run: |
+          sudo mkdir -p /var/lib/patchli /etc/patchli
+          sudo chmod 777 /var/lib/patchli /etc/patchli
+          go test -v ./...
         working-directory: agent
 
   chaos_test:
@@ -156,6 +159,9 @@ jobs:
       - name: Fuzz WebSocket Parser
         run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
         working-directory: server
+        env:
+          REGISTRATION_SECRET: testsecret
+          JWT_SECRET: atleast16charslongsecret
 
   deadlock_detection:
     name: Deadlock Detection
@@ -170,3 +176,6 @@ jobs:
       - name: Run Tests with Deadlock Detector
         run: go test -v -race ./...
         working-directory: server
+        env:
+          REGISTRATION_SECRET: testsecret
+          JWT_SECRET: atleast16charslongsecret

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"time"
 
@@ -52,7 +53,9 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pair)
+	if err := json.NewEncoder(w).Encode(pair); err != nil { // #nosec G117 -- Expected behavior to return access token
+		log.Printf("Error encoding token pair: %v", err)
+	}
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -99,5 +102,7 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pair)
+	if err := json.NewEncoder(w).Encode(pair); err != nil { // #nosec G117 -- Expected behavior to return access token
+		log.Printf("Error encoding token pair: %v", err)
+	}
 }
