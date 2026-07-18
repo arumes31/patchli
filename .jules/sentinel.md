@@ -1,0 +1,4 @@
+## 2025-03-01 - XSS in HTML Template Rendering
+**Vulnerability:** Use of `text/template` instead of `html/template` when rendering HTML content (`setup.html`) in `server/internal/api/handlers.go`.
+**Learning:** `text/template` does not contextually escape input data. Since `r.Host` (which can be derived from the user-controlled `Host` header) is passed into the template as the BaseURL, it could allow an attacker to inject malicious scripts via a crafted `Host` header, leading to a Reflected Cross-Site Scripting (XSS) vulnerability.
+**Prevention:** In Go applications, always use `html/template` instead of `text/template` for rendering HTML content to ensure automatic contextual escaping and prevent Cross-Site Scripting (XSS) vulnerabilities.
