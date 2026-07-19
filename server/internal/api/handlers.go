@@ -8,7 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"html/template"
+	"text/template"
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
