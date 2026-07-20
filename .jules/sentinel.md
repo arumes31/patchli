@@ -1,0 +1,4 @@
+## 2025-02-20 - HTML Injection / XSS via text/template
+**Vulnerability:** The application was using `text/template` instead of `html/template` to render `setup.html`. The `r.Host` parameter (which can be controlled by the user via the Host header) was being injected into the HTML template without contextual escaping, leading to a potential Cross-Site Scripting (XSS) vulnerability.
+**Learning:** `text/template` does not provide contextual escaping and should never be used to generate HTML where user-controlled input (even implicit input like HTTP headers) might be rendered.
+**Prevention:** Always use `html/template` instead of `text/template` for rendering HTML content to ensure automatic contextual escaping and prevent XSS.
