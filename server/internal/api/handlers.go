@@ -3,12 +3,12 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"regexp"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
