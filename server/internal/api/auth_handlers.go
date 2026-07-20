@@ -52,7 +52,9 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pair)
+	if err := json.NewEncoder(w).Encode(pair); err != nil { // #nosec G117 -- encoding token pair
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -99,5 +101,7 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(pair)
+	if err := json.NewEncoder(w).Encode(pair); err != nil { // #nosec G117 -- encoding token pair
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }

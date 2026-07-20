@@ -1,7 +1,6 @@
 package fleet
 
 import (
-	"strings"
 	"sync"
 	"time"
 
@@ -67,26 +66,6 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
-}
-
-// ⚡ Bolt: GetStats calculates node stats directly from the internal map
-// to avoid O(N) memory allocations of making a copy of all AgentDetails
-// just to count statuses.
-func (am *AgentManager) GetStats() (total, online, reboot int) {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-
-	total = len(am.details)
-	for _, d := range am.details {
-		status := strings.ToLower(d.Status)
-		if strings.Contains(status, "online") {
-			online++
-		}
-		if strings.Contains(status, "reboot") {
-			reboot++
-		}
-	}
-	return total, online, reboot
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {

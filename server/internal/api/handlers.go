@@ -38,14 +38,22 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ⚡ Bolt: HandleStats now uses GetStats() to avoid fetching the entire node slice,
-// preventing O(N) memory allocations across the fleet map on every API request.
 func HandleStats(w http.ResponseWriter, r *http.Request) {
-	total, online, rebootRequired := fleet.Registry.GetStats()
+	nodes := fleet.Registry.GetNodes()
+	online := 0
+	rebootRequired := 0
+	for _, n := range nodes {
+		if strings.Contains(strings.ToLower(n.Status), "online") {
+			online++
+		}
+		if strings.Contains(strings.ToLower(n.Status), "reboot") {
+			rebootRequired++
+		}
+	}
 
 	compliance := "0%"
-	if total > 0 {
-		compliance = fmt.Sprintf("%d%%", (online * 100 / total))
+	if len(nodes) > 0 {
+		compliance = fmt.Sprintf("%d%%", (online * 100 / len(nodes)))
 	}
 
 	stats := struct {
@@ -53,7 +61,7 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		Immune   string `json:"immune"`
 		Recovery int    `json:"recovery"`
 	}{
-		Vitality: total,
+		Vitality: len(nodes),
 		Immune:   compliance,
 		Recovery: rebootRequired,
 	}
