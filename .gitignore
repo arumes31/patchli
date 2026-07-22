@@ -1,0 +1,20 @@
+# Go testing and coverage
+/data/
+/coverage/
+coverage.out
+coverage.html
+coverage.txt
+.cover/
+*.coverprofile
+
+# Binaries
+server/server
+server/server.exe
+agent/agent
+agent/agent.exe
+
+# Database
+server/db/*.db
+
+# Logs
+*.log
