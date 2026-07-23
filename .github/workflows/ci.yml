@@ -124,6 +124,7 @@ jobs:
       - name: Run Server in Background
         run: |
           export REGISTRATION_SECRET=testsecret
+          export JWT_SECRET=atleast16charslongsecret
           ./server/server_bin &
           sleep 5
         env:
