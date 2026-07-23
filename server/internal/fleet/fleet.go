@@ -43,8 +43,10 @@ func (am *AgentManager) Unregister(mac string) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	delete(am.agents, mac)
-	delete(am.details, mac)
 	delete(am.activeJobs, mac)
+	if a, ok := am.details[mac]; ok {
+		a.Status = "offline"
+	}
 }
 
 func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {

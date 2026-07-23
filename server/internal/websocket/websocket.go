@@ -19,10 +19,24 @@ var jwtSecret []byte
 
 func init() {
 	secret := os.Getenv("JWT_SECRET")
+	if secret != "" && len(secret) >= 16 {
+		jwtSecret = []byte(secret)
+	}
+}
+
+// InitSecrets loads the JWT secret from the environment. Called by the
+// server main at startup; panics if the secret is missing or too short.
+func InitSecrets() {
+	secret := os.Getenv("JWT_SECRET")
 	if secret == "" || len(secret) < 16 {
-		log.Fatal("JWT_SECRET environment variable is required and must be at least 16 characters")
+		panic("JWT_SECRET environment variable is required and must be at least 16 characters")
 	}
 	jwtSecret = []byte(secret)
+}
+
+// SetTestSecrets sets a dummy JWT secret for unit tests.
+func SetTestSecrets() {
+	jwtSecret = []byte("test-jwt-secret-that-is-long-enough")
 }
 
 var upgrader = websocket.Upgrader{

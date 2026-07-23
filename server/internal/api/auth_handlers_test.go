@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -13,9 +12,6 @@ import (
 )
 
 func TestHandleAgentLogin_Unauthorized(t *testing.T) {
-	os.Setenv("REGISTRATION_SECRET", "testsecret")
-	os.Setenv("JWT_SECRET", "atleast16charslongsecret")
-
 	loginReq := LoginRequest{
 		MAC:       "00:11:22:33:44:55",
 		Group:     "default",
@@ -35,9 +31,6 @@ func TestHandleAgentLogin_Unauthorized(t *testing.T) {
 }
 
 func TestHandleAgentLogin_Success(t *testing.T) {
-	os.Setenv("REGISTRATION_SECRET", "testsecret")
-	os.Setenv("JWT_SECRET", "atleast16charslongsecret")
-
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := auth.GenerateRegistrationSignature("default", timestamp)
 

@@ -18,3 +18,6 @@ server/db/*.db
 
 # Logs
 *.log
+graphify-out/
+
+.claudeignore

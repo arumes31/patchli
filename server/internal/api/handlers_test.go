@@ -177,6 +177,7 @@ func TestHandleSetup(t *testing.T) {
 			name:           "X-Forwarded-Proto https",
 			query:          "group=test",
 			header:         map[string]string{"X-Forwarded-Proto": "https"},
+			env:            map[string]string{"TRUSTED_PROXY": "127.0.0.1"},
 			expectedInBody: []string{"SERVER_URL='https://"},
 			expectedStatus: http.StatusOK,
 		},
@@ -204,6 +205,11 @@ func TestHandleSetup(t *testing.T) {
 
 			if tt.useTLS {
 				req.TLS = &tls.ConnectionState{}
+			}
+
+			// Set RemoteAddr to match TRUSTED_PROXY when configured
+			if _, ok := tt.env["TRUSTED_PROXY"]; ok {
+				req.RemoteAddr = tt.env["TRUSTED_PROXY"] + ":1234"
 			}
 
 			// Set headers

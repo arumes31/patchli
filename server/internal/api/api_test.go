@@ -8,7 +8,14 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/arumes31/patchli/server/internal/auth"
 )
+
+func TestMain(m *testing.M) {
+	auth.SetTestSecrets()
+	os.Exit(m.Run())
+}
 
 func TestHandleSetupSecurity(t *testing.T) {
 	tests := []struct {
@@ -145,9 +152,9 @@ func TestEscapePowerShell(t *testing.T) {
 
 func TestIsValidGroupName(t *testing.T) {
 	tests := []struct {
-		name   string
-		input  string
-		valid  bool
+		name  string
+		input string
+		valid bool
 	}{
 		{"simple", "production", true},
 		{"with dots", "web.prod.01", true},

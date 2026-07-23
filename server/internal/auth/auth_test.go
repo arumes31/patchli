@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+func TestMain(m *testing.M) {
+	SetTestSecrets()
+	m.Run()
+}
+
 func TestGenerateRegistrationSignature(t *testing.T) {
 	sig1 := GenerateRegistrationSignature("default", "2024-01-01T00:00:00Z")
 	sig2 := GenerateRegistrationSignature("default", "2024-01-01T00:00:00Z")

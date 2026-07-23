@@ -4,20 +4,18 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/arumes31/patchli/server/internal/auth"
 	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/gorilla/websocket"
 )
 
 func init() {
-	// Set environment variables for tests
-	os.Setenv("REGISTRATION_SECRET", "testregsecret1234")
-	os.Setenv("JWT_SECRET", "atleast16charslongsecret")
+	auth.SetTestSecrets()
+	SetTestSecrets()
 }
 
 func TestHandleWebSocket(t *testing.T) {

@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
-	jwtSecret          = []byte(os.Getenv("JWT_SECRET"))
+	registrationSecret []byte
+	jwtSecret          []byte
 )
 
 const (
@@ -27,9 +27,29 @@ type TokenPair struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func init() {
+// InitSecrets loads secrets from environment variables. In production, the
+// server main function calls this and panics if either variable is empty.
+// During testing, SetTestSecrets can be used instead.
+func InitSecrets() {
+	registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
+	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 	if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
 		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
+	}
+}
+
+// SetTestSecrets sets dummy secrets for unit tests.
+func SetTestSecrets() {
+	registrationSecret = []byte("test-registration-secret")
+	jwtSecret = []byte("test-jwt-secret-that-is-long-enough")
+}
+
+func init() {
+	// Auto-initialize from env vars if set; otherwise defer to explicit
+	// InitSecrets (production) or SetTestSecrets (tests).
+	if os.Getenv("REGISTRATION_SECRET") != "" && os.Getenv("JWT_SECRET") != "" {
+		registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
+		jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 	}
 }
 

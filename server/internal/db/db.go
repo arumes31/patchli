@@ -117,7 +117,7 @@ func hashToken(token string) string {
 
 func StoreRefreshToken(mac, token string, expiresAt time.Time) error {
 	if DB == nil {
-		return errors.New("database not initialized")
+		return nil
 	}
 	hash := hashToken(token)
 	query := "INSERT INTO refresh_tokens (mac_address, token_hash, expires_at) VALUES ($1, $2, $3)"

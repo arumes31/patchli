@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/api"
+	"github.com/arumes31/patchli/server/internal/auth"
 	"github.com/arumes31/patchli/server/internal/db"
 	"github.com/arumes31/patchli/server/internal/orchestration"
 	"github.com/arumes31/patchli/server/internal/websocket"
@@ -18,6 +19,8 @@ import (
 
 func main() {
 	log.Println("Starting Patchli Server (Control Plane)...")
+	auth.InitSecrets()
+	websocket.InitSecrets()
 
 	// Initialize Worker Pool
 	pool := orchestration.NewWorkerPool(10)
