@@ -59,21 +59,12 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
-	nodes := fleet.Registry.GetNodes()
-	online := 0
-	rebootRequired := 0
-	for _, n := range nodes {
-		if strings.Contains(strings.ToLower(n.Status), "online") {
-			online++
-		}
-		if strings.Contains(strings.ToLower(n.Status), "reboot") {
-			rebootRequired++
-		}
-	}
+	// ⚡ Bolt: avoid GetNodes() slice allocations to improve stats endpoint performance
+	total, online, rebootRequired := fleet.Registry.GetStats()
 
 	compliance := "0%"
-	if len(nodes) > 0 {
-		compliance = fmt.Sprintf("%d%%", (online * 100 / len(nodes)))
+	if total > 0 {
+		compliance = fmt.Sprintf("%d%%", (online * 100 / total))
 	}
 
 	stats := struct {
@@ -81,7 +72,7 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		Immune   string `json:"immune"`
 		Recovery int    `json:"recovery"`
 	}{
-		Vitality: len(nodes),
+		Vitality: total,
 		Immune:   compliance,
 		Recovery: rebootRequired,
 	}
