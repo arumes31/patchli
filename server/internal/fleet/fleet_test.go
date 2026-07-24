@@ -49,4 +49,24 @@ func TestAgentManager(t *testing.T) {
 			t.Error("Expected error when sending command to offline agent")
 		}
 	})
+
+	t.Run("GetStats", func(t *testing.T) {
+		am.mu.Lock()
+		am.details = make(map[string]*models.AgentDetails)
+		am.details["1"] = &models.AgentDetails{Status: "Online"}
+		am.details["2"] = &models.AgentDetails{Status: "Reboot required"}
+		am.details["3"] = &models.AgentDetails{Status: "offline"}
+		am.mu.Unlock()
+
+		total, online, reboot := am.GetStats()
+		if total != 3 {
+			t.Errorf("Expected total 3, got %d", total)
+		}
+		if online != 1 {
+			t.Errorf("Expected online 1, got %d", online)
+		}
+		if reboot != 1 {
+			t.Errorf("Expected reboot 1, got %d", reboot)
+		}
+	})
 }
