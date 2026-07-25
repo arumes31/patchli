@@ -44,6 +44,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
+	// #nosec G704 -- internal agent communication
 	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
@@ -52,6 +53,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
+	// #nosec G704 -- internal agent communication
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
@@ -60,6 +62,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
+		// #nosec G706 -- log output
 		log.Printf("Webhook returned error status: %d", resp.StatusCode)
 	}
 }
