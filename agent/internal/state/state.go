@@ -39,6 +39,7 @@ func LoadState() (*State, error) {
 		return nil, nil
 	}
 
+	// #nosec G304 -- local state file
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		return nil, err
