@@ -144,6 +144,7 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
+	// Sentinel: Use html/template to prevent XSS vulnerabilities when rendering variables like r.Host
 	tmpl, err := template.ParseFS(static.FS, "setup.html")
 	if err != nil {
 		http.Error(w, "Failed to load setup page", http.StatusInternalServerError)
