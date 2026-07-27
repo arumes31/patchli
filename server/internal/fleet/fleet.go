@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,24 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
+}
+
+// ⚡ Bolt: Provide direct O(1) memory O(N) time aggregation to avoid O(N) slice copies for stats
+func (am *AgentManager) GetStats() (int, int, int) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	total := len(am.details)
+	online := 0
+	reboot := 0
+	for _, d := range am.details {
+		if strings.Contains(strings.ToLower(d.Status), "online") {
+			online++
+		}
+		if strings.Contains(strings.ToLower(d.Status), "reboot") {
+			reboot++
+		}
+	}
+	return total, online, reboot
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {

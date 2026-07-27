@@ -1,0 +1,3 @@
+## 2024-05-15 - Aggregating API Stats directly on registry avoids O(N) memory allocations
+**Learning:** Returning map state dynamically through an API handler previously involved first creating a copied slice of all agents (O(N) operation) just to loop through and calculate statistical totals (`online`, `reboot`, etc.).
+**Action:** In high volume or regularly polled endpoint aggregations, write dedicated struct receiver methods (`GetStats()`) directly on the data structure containing the items in order to compute the stats on the raw map under a read lock. This avoids intermediate slice copying, providing O(1) memory and avoiding memory allocation overhead, which matters when node size scales.
