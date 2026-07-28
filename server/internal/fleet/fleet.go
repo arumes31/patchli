@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,23 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
+}
+
+// ⚡ Bolt: Calculate aggregates directly to avoid O(N) memory allocations from GetNodes()
+func (am *AgentManager) GetStats() (total int, online int, rebootRequired int) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+
+	total = len(am.details)
+	for _, n := range am.details {
+		if strings.Contains(strings.ToLower(n.Status), "online") {
+			online++
+		}
+		if strings.Contains(strings.ToLower(n.Status), "reboot") {
+			rebootRequired++
+		}
+	}
+	return total, online, rebootRequired
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
