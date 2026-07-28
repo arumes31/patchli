@@ -55,16 +55,25 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	_, _ = w.Write(buf.Bytes()) // #nosec G104
+	w.Write(buf.Bytes())
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
-	// ⚡ Bolt: Use GetStats() to avoid O(N) allocation of fetching all nodes
-	total, online, rebootRequired := fleet.Registry.GetStats()
+	nodes := fleet.Registry.GetNodes()
+	online := 0
+	rebootRequired := 0
+	for _, n := range nodes {
+		if strings.Contains(strings.ToLower(n.Status), "online") {
+			online++
+		}
+		if strings.Contains(strings.ToLower(n.Status), "reboot") {
+			rebootRequired++
+		}
+	}
 
 	compliance := "0%"
-	if total > 0 {
-		compliance = fmt.Sprintf("%d%%", (online * 100 / total))
+	if len(nodes) > 0 {
+		compliance = fmt.Sprintf("%d%%", (online * 100 / len(nodes)))
 	}
 
 	stats := struct {
@@ -72,7 +81,7 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		Immune   string `json:"immune"`
 		Recovery int    `json:"recovery"`
 	}{
-		Vitality: total,
+		Vitality: len(nodes),
 		Immune:   compliance,
 		Recovery: rebootRequired,
 	}
@@ -83,7 +92,7 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	_, _ = w.Write(buf.Bytes()) // #nosec G104
+	w.Write(buf.Bytes())
 }
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
@@ -154,7 +163,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	}
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		log.Printf("Invalid BaseURL rejected: %q", baseURL) // #nosec G706 -- sanitized by URL parse error check
+		log.Printf("Invalid BaseURL rejected: %q", baseURL)
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}

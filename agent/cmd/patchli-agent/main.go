@@ -29,9 +29,9 @@ import (
 // On Windows it uses cmd.exe /c, on Unix it uses sh -c.
 func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
 	if runtime.GOOS == "windows" {
-		return exec.CommandContext(ctx, "cmd.exe", "/c", script) // #nosec G204 -- Execution intended
+		return exec.CommandContext(ctx, "cmd.exe", "/c", script)
 	}
-	return exec.CommandContext(ctx, "sh", "-c", script) // #nosec G204 -- Execution intended
+	return exec.CommandContext(ctx, "sh", "-c", script)
 }
 
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
@@ -115,7 +115,7 @@ func performSelfDiagnosis() {
 	if serverURL == "" {
 		serverURL = "localhost:8080"
 	}
-	resp, err := http.Get("http://" + serverURL + "/health") // #nosec G704 -- internal agent communication
+	resp, err := http.Get("http://" + serverURL + "/health")
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
@@ -138,7 +138,7 @@ func getTokenFile() string {
 }
 
 func saveTokens(pair TokenPair) error {
-	data, err := json.Marshal(pair) // #nosec G117 -- false positive, error is checked
+	data, err := json.Marshal(pair)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func saveTokens(pair TokenPair) error {
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create directory %s: %v", dir, err)
 	}
-	return os.WriteFile(getTokenFile(), data, 0600) // #nosec G302 G703 -- Safe permissions and safe internal path
+	return os.WriteFile(getTokenFile(), data, 0600)
 }
 
 func loadTokens() (*TokenPair, error) {
@@ -167,14 +167,14 @@ func refreshTokens(ctx context.Context, serverURL, nodeID string, refreshToken s
 		"refresh_token": refreshToken,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody)) // #nosec G704 -- internal agent communication
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create refresh request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req) // #nosec G704 -- internal agent communication
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 		}
 		data, _ := json.Marshal(hb)
 
-		req, err := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data)) // #nosec G704 -- internal agent communication
+		req, err := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Failed to create poll request: %v", err)
 			select {
@@ -374,7 +374,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 			req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
 		}
 
-		resp, err := client.Do(req) // #nosec G704 -- internal agent communication
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("HTTP Poll error: %v", err)
 			select {
@@ -569,7 +569,7 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("signature verification failed: %v", err)}
 	}
 
-	if err := os.Chmod(tmpName, 0755); err != nil { // #nosec G302 -- Execution required
+	if err := os.Chmod(tmpName, 0755); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
@@ -606,7 +606,7 @@ func verifySignature(filePath string) error {
 	}
 
 	sigPath := filePath + ".sig"
-	sigBase64, err := os.ReadFile(sigPath) // #nosec G304 -- local state file
+	sigBase64, err := os.ReadFile(sigPath)
 	if err != nil {
 		return fmt.Errorf("failed to read signature file %s: %v", sigPath, err)
 	}
@@ -616,7 +616,7 @@ func verifySignature(filePath string) error {
 		return fmt.Errorf("failed to decode signature: %v", err)
 	}
 
-	data, err := os.ReadFile(filePath) // #nosec G304 -- local state file
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to read binary: %v", err)
 	}
@@ -631,9 +631,9 @@ func restartAgent(ctx context.Context) ([]byte, error) {
 	if runtime.GOOS == "windows" {
 		scPath, err := exec.LookPath("sc.exe")
 		if err == nil {
-			helper := exec.Command("cmd.exe", "/c", "timeout /t 2 /nobreak >nul && "+scPath+" start patchli-agent") // #nosec G204 -- Execution intended
+			helper := exec.Command("cmd.exe", "/c", "timeout /t 2 /nobreak >nul && "+scPath+" start patchli-agent")
 			_ = helper.Start()
-			_ = exec.CommandContext(ctx, scPath, "stop", "patchli-agent").Run() // #nosec G204 -- Execution intended
+			_ = exec.CommandContext(ctx, scPath, "stop", "patchli-agent").Run()
 			return []byte("Restarting via sc.exe helper"), nil
 		}
 
@@ -641,9 +641,9 @@ func restartAgent(ctx context.Context) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to find powershell.exe or sc.exe: %v", err)
 		}
-		helper := exec.Command(psPath, "-Command", "Start-Sleep -Seconds 2; Start-Service -Name patchli-agent") // #nosec G204 -- Execution intended
+		helper := exec.Command(psPath, "-Command", "Start-Sleep -Seconds 2; Start-Service -Name patchli-agent")
 		_ = helper.Start()
-		_ = exec.CommandContext(ctx, psPath, "-Command", "Stop-Service -Name patchli-agent").Run() // #nosec G204 -- Execution intended
+		_ = exec.CommandContext(ctx, psPath, "-Command", "Stop-Service -Name patchli-agent").Run()
 		return []byte("Restarting via powershell.exe helper"), nil
 	}
 	if _, err := os.Stat("/run/openrc"); err == nil {

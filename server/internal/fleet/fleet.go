@@ -1,7 +1,6 @@
 package fleet
 
 import (
-	"strings"
 	"sync"
 	"time"
 
@@ -27,7 +26,7 @@ func (am *AgentManager) Register(mac string, conn *websocket.Conn, p models.Hear
 	defer am.mu.Unlock()
 	// Close existing connection to prevent resource leak on re-registration
 	if oldConn, ok := am.agents[mac]; ok {
-		_ = oldConn.Close() // #nosec G104
+		oldConn.Close()
 	}
 	am.agents[mac] = conn
 	am.details[mac] = &models.AgentDetails{
@@ -72,23 +71,6 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
-}
-
-// ⚡ Bolt: Calculate aggregates directly to avoid O(N) memory allocations from GetNodes()
-func (am *AgentManager) GetStats() (total int, online int, rebootRequired int) {
-	am.mu.RLock()
-	defer am.mu.RUnlock()
-
-	total = len(am.details)
-	for _, n := range am.details {
-		if strings.Contains(strings.ToLower(n.Status), "online") {
-			online++
-		}
-		if strings.Contains(strings.ToLower(n.Status), "reboot") {
-			rebootRequired++
-		}
-	}
-	return total, online, rebootRequired
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {

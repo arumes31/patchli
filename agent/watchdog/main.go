@@ -29,7 +29,7 @@ func parseArgs(args []string) string {
 }
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
-	log.Printf("Starting Patchli Watchdog for %s", agentPath) // #nosec G706 -- internal safe config variable
+	log.Printf("Starting Patchli Watchdog for %s", agentPath)
 
 	for {
 		cmd := execCommand(agentPath)
