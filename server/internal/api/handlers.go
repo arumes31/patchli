@@ -10,7 +10,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"text/template"
+	"html/template"
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
