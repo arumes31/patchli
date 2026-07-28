@@ -27,7 +27,7 @@ func (am *AgentManager) Register(mac string, conn *websocket.Conn, p models.Hear
 	defer am.mu.Unlock()
 	// Close existing connection to prevent resource leak on re-registration
 	if oldConn, ok := am.agents[mac]; ok {
-		oldConn.Close()
+		_ = oldConn.Close() // #nosec G104
 	}
 	am.agents[mac] = conn
 	am.details[mac] = &models.AgentDetails{
