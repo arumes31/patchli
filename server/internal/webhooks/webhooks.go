@@ -2,7 +2,9 @@ package webhooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -51,7 +53,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := safeHTTPClient()
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
@@ -75,7 +77,7 @@ func NotifySlack(webhookURL string, msg string) {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := safeHTTPClient()
 		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
@@ -98,7 +100,7 @@ func NotifyDiscord(webhookURL string, msg string) {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := safeHTTPClient()
 		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
@@ -127,7 +129,7 @@ func NotifyTeams(webhookURL string, title, text string) {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
+		client := safeHTTPClient()
 		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
@@ -155,11 +157,48 @@ func isValidURL(u string) bool {
 		return false
 	}
 
-	// Block private/link-local IP ranges to prevent SSRF
-	ip := net.ParseIP(host)
-	if ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
+	// Perform DNS resolution to block hostnames that resolve to private/loopback IPs
+	ips, err := net.LookupIP(host)
+	if err != nil {
 		return false
 	}
 
+	for _, ip := range ips {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return false
+		}
+	}
+
 	return true
+}
+
+var safeHTTPClient = func() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	return &http.Client{
+		Timeout: 10 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				ips, err := net.LookupIP(host)
+				if err != nil {
+					return nil, err
+				}
+				for _, ip := range ips {
+					if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+						return nil, fmt.Errorf("blocked private IP: %s", ip.String())
+					}
+				}
+				if len(ips) == 0 {
+					return nil, fmt.Errorf("no IPs found for host: %s", host)
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+			},
+		},
+	}
 }
