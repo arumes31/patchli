@@ -2,7 +2,9 @@ package webhooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -51,8 +53,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := safeHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
@@ -75,8 +76,7 @@ func NotifySlack(webhookURL string, msg string) {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := safeHTTPClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
 			return
@@ -98,8 +98,7 @@ func NotifyDiscord(webhookURL string, msg string) {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := safeHTTPClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
 			return
@@ -127,8 +126,7 @@ func NotifyTeams(webhookURL string, title, text string) {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := safeHTTPClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
 			return
@@ -162,4 +160,44 @@ func isValidURL(u string) bool {
 	}
 
 	return true
+}
+
+// safeHTTPClient is reused across requests to prevent resource leaks (goroutines/file descriptors)
+var safeHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, err
+			}
+
+			if len(ips) == 0 {
+				return nil, fmt.Errorf("no IP found")
+			}
+
+			var lastErr error
+			dialer := &net.Dialer{Timeout: 5 * time.Second}
+
+			// Iterate over all resolved IPs (Happy Eyeballs approach)
+			for _, ip := range ips {
+				if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+					return nil, fmt.Errorf("SSRF prevention: blocked %s", ip)
+				}
+
+				// 🛡️ Sentinel: Dial directly to the validated IP to prevent TOCTOU DNS rebinding SSRF
+				conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+
+			return nil, fmt.Errorf("failed to dial: %w", lastErr)
+		},
+	},
 }
