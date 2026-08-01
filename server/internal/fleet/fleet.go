@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,28 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
+}
+
+// ⚡ Bolt: GetStats directly aggregates counts to avoid O(N) slice allocations when full details aren't needed.
+func (am *AgentManager) GetStats() (int, int, int) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+
+	total := len(am.details)
+	online := 0
+	rebootRequired := 0
+
+	for _, d := range am.details {
+		lowerStatus := strings.ToLower(d.Status)
+		if strings.Contains(lowerStatus, "online") {
+			online++
+		}
+		if strings.Contains(lowerStatus, "reboot") {
+			rebootRequired++
+		}
+	}
+
+	return total, online, rebootRequired
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
