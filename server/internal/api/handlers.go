@@ -10,7 +10,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"text/template"
+	"html/template" // 🛡️ Sentinel: Using html/template instead of text/template to prevent XSS when rendering user-controlled data like r.Host
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
