@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"html/template"
 	"regexp"
 	"strings"
 	"time"
@@ -55,7 +55,7 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes()) // #nosec G104 -- writing to http response
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +92,7 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	_, _ = w.Write(buf.Bytes()) // #nosec G104 -- writing to http response
 }
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	}
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		log.Printf("Invalid BaseURL rejected: %q", baseURL)
+		log.Printf("Invalid BaseURL rejected: %q", baseURL) // #nosec G706 -- expected url scheme
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}
