@@ -62,12 +62,12 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(pair); err != nil { // #nosec G117 -- encoding token payload
+	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
 		log.Printf("Error encoding login response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	_, _ = w.Write(buf.Bytes()) // #nosec G104 -- writing to http response
+	w.Write(buf.Bytes())
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -119,10 +119,10 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(pair); err != nil { // #nosec G117 -- encoding token payload
+	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
 		log.Printf("Error encoding refresh response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	_, _ = w.Write(buf.Bytes()) // #nosec G104 -- writing to http response
+	w.Write(buf.Bytes())
 }

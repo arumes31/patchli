@@ -55,7 +55,7 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	_, _ = w.Write(buf.Bytes()) // #nosec G104 -- writing to http response
+	w.Write(buf.Bytes())
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +92,7 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	_, _ = w.Write(buf.Bytes()) // #nosec G104 -- writing to http response
+	w.Write(buf.Bytes())
 }
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +164,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	}
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		log.Printf("Invalid BaseURL rejected: %q", baseURL) // #nosec G706 -- expected url scheme
+		log.Printf("Invalid BaseURL rejected: %q", baseURL)
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}

@@ -2,9 +2,7 @@ package webhooks
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -12,44 +10,6 @@ import (
 	"os"
 	"time"
 )
-
-// client is a global HTTP client configured to prevent SSRF and DNS rebinding attacks.
-var client *http.Client
-
-func init() {
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-
-			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-			if err != nil {
-				return nil, err
-			}
-
-			for _, ip := range ips {
-				if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-					return nil, errors.New("SSRF Attempt: private IP detected")
-				}
-			}
-
-			// Try to connect to the first resolved IP that is public
-			for _, ip := range ips {
-				conn, err := net.DialTimeout(network, net.JoinHostPort(ip.String(), port), 5*time.Second)
-				if err == nil {
-					return conn, nil
-				}
-			}
-			return nil, errors.New("failed to connect to any resolved IP")
-		},
-	}
-	client = &http.Client{
-		Transport: transport,
-		Timeout:   10 * time.Second,
-	}
-}
 
 type WebhookPayload struct {
 	Event   string `json:"event"`
@@ -84,14 +44,15 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data)) // #nosec G704 -- targetURL is explicitly validated via DialContext
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := client.Do(req) // #nosec G704 -- internal agent communication
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
@@ -99,7 +60,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		log.Printf("Webhook returned error status: %d", resp.StatusCode) // #nosec G706 -- expected status code
+		log.Printf("Webhook returned error status: %d", resp.StatusCode)
 	}
 }
 
@@ -114,7 +75,8 @@ func NotifySlack(webhookURL string, msg string) {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G704 -- internal agent communication
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
 			return
@@ -136,7 +98,8 @@ func NotifyDiscord(webhookURL string, msg string) {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G704 -- internal agent communication
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
 			return
@@ -164,7 +127,8 @@ func NotifyTeams(webhookURL string, title, text string) {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G704 -- internal agent communication
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
 			return
