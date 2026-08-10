@@ -1,0 +1,3 @@
+## 2025-01-30 - Replace O(N) GetNodes with GetStats
+**Learning:** Calculating aggregate stats (total, online, reboot counts) across a fleet map using `GetNodes()` creates unnecessary O(N) slice copies of internal maps and causes memory allocation overhead.
+**Action:** Created `GetStats()` method on `AgentManager` to directly iterate over the internal map, calculate stats, and return only the counts, eliminating unnecessary slice allocations when just stats are needed.
