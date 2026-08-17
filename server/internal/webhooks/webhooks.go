@@ -2,7 +2,9 @@ package webhooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -10,6 +12,36 @@ import (
 	"os"
 	"time"
 )
+
+// secureHTTPClient mitigates TOCTOU DNS Rebinding SSRF vulnerabilities
+var secureHTTPClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			if len(ips) == 0 {
+				return nil, errors.New("no IP addresses found")
+			}
+			ip := ips[0].IP
+			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+				return nil, errors.New("blocked private/loopback IP")
+			}
+			ipStr := ip.String()
+			if ip.To4() == nil {
+				ipStr = "[" + ipStr + "]"
+			}
+			dialer := &net.Dialer{Timeout: 5 * time.Second}
+			return dialer.DialContext(ctx, network, ipStr+":"+port)
+		},
+	},
+}
 
 type WebhookPayload struct {
 	Event   string `json:"event"`
@@ -51,8 +83,8 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	client := secureHTTPClient
+	resp, err := client.Do(req) // #nosec G704 -- mitigated by secureHTTPClient
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
@@ -75,8 +107,8 @@ func NotifySlack(webhookURL string, msg string) {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		client := secureHTTPClient
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G704 -- mitigated by secureHTTPClient
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
 			return
@@ -98,8 +130,8 @@ func NotifyDiscord(webhookURL string, msg string) {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		client := secureHTTPClient
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G704 -- mitigated by secureHTTPClient
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
 			return
@@ -127,8 +159,8 @@ func NotifyTeams(webhookURL string, title, text string) {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		client := secureHTTPClient
+		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data)) // #nosec G704 -- mitigated by secureHTTPClient
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
 			return
