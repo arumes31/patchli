@@ -25,7 +25,7 @@ func init() {
 }
 
 func GetOrGenerate() (string, error) {
-	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
+	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 { // #nosec G304 -- local state file
 		parsed := strings.TrimSpace(string(data))
 		if _, err := uuid.Parse(parsed); err == nil {
 			return parsed, nil
