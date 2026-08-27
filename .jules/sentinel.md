@@ -1,0 +1,4 @@
+## 2025-02-14 - Fix SSRF TOCTOU bypass via DNS rebinding
+**Vulnerability:** The webhook URL validation originally checked the host using `net.ParseIP` directly, but did not perform DNS resolution. An initial fix added `net.LookupIP(host)` to validation, but failed to address Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding, because the HTTP client performs a second DNS lookup when it makes the actual request.
+**Learning:** Returning a simple boolean validation of a URL is insufficient for preventing SSRF against sophisticated attackers, because an attacker's DNS server can return a safe public IP during validation, and switch to a malicious private IP during the subsequent HTTP request.
+**Prevention:** To genuinely prevent SSRF and DNS rebinding in Go, implement a custom `DialContext` on the `http.Transport` that explicitly resolves the IP, blocks private/loopback addresses, and forces the HTTP client to connect to the exact validated IP address.
