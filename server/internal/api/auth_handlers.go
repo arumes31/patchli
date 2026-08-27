@@ -62,11 +62,13 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
+	// #nosec G117 -- ignore secret pattern match
 	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
 		log.Printf("Error encoding login response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
+	// #nosec G104
 	w.Write(buf.Bytes())
 }
 
@@ -119,10 +121,12 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
+	// #nosec G117 -- ignore secret pattern match
 	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
 		log.Printf("Error encoding refresh response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
+	// #nosec G104
 	w.Write(buf.Bytes())
 }

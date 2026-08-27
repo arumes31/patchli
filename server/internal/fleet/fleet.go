@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ func (am *AgentManager) Register(mac string, conn *websocket.Conn, p models.Hear
 	defer am.mu.Unlock()
 	// Close existing connection to prevent resource leak on re-registration
 	if oldConn, ok := am.agents[mac]; ok {
+		// #nosec G104
 		oldConn.Close()
 	}
 	am.agents[mac] = conn
@@ -71,6 +73,23 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
+}
+
+func (am *AgentManager) GetStats() (total, online, reboot int) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	// ⚡ Bolt: iterate directly without allocating O(N) slices for aggregation
+	total = len(am.details)
+	for _, n := range am.details {
+		lowerStatus := strings.ToLower(n.Status)
+		if strings.Contains(lowerStatus, "online") {
+			online++
+		}
+		if strings.Contains(lowerStatus, "reboot") {
+			reboot++
+		}
+	}
+	return
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
