@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,22 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
+}
+
+// ⚡ Bolt: calculates aggregate stats directly from internal maps without allocating slices
+func (am *AgentManager) GetStats() (total int, online int, reboot int) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	total = len(am.details)
+	for _, d := range am.details {
+		if strings.Contains(strings.ToLower(d.Status), "online") {
+			online++
+		}
+		if strings.Contains(strings.ToLower(d.Status), "reboot") {
+			reboot++
+		}
+	}
+	return total, online, reboot
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
