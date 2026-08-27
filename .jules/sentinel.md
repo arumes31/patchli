@@ -1,0 +1,4 @@
+## 2024-05-24 - Cross-Site Scripting (XSS) in Go Templates
+**Vulnerability:** The codebase was using `text/template` to render HTML templates in `server/internal/api/handlers.go`, which does not provide contextual escaping. This could lead to Cross-Site Scripting (XSS) vulnerabilities, specifically if user-controlled input (like URL components) is injected into the rendered response without sanitization.
+**Learning:** `text/template` evaluates raw strings, meaning any HTML tags or JavaScript contained in variables are rendered as-is. The developer might not have realized that `html/template` provides the exact same interface while automatically performing contextual, safe escaping.
+**Prevention:** Always use `html/template` instead of `text/template` for rendering HTML content in Go applications to ensure automatic contextual escaping and prevent XSS vulnerabilities.
