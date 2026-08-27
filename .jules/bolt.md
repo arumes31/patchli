@@ -1,0 +1,3 @@
+## 2024-06-25 - Avoid O(N) memory allocations for aggregate stats
+**Learning:** Using `GetNodes()` for simple aggregate statistics (like counting nodes or checking status) creates an unnecessary O(N) memory allocation footprint, as it iterates through the internal `details` map to allocate and return a full slice copy of all agent details. When node count is large, this memory overhead can be substantial during frequent stats requests.
+**Action:** When calculating statistics across the fleet, avoid retrieving the entire slice of agents if possible. Instead, implement and use specialized methods (like `GetStats()`) directly on the `AgentManager` that iterate over the internal data structures while holding a read lock, reducing memory allocations.

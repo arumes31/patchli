@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,23 @@ func (am *AgentManager) GetNodes() []models.AgentDetails {
 		nodes = append(nodes, *d)
 	}
 	return nodes
+}
+
+// ⚡ Bolt: iterate internally to prevent O(N) memory allocation of returning the entire slice
+func (am *AgentManager) GetStats() (total, online, reboot int) {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	for _, d := range am.details {
+		total++
+		status := strings.ToLower(d.Status)
+		if strings.Contains(status, "online") {
+			online++
+		}
+		if strings.Contains(status, "reboot") {
+			reboot++
+		}
+	}
+	return
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
