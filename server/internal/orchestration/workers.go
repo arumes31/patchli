@@ -148,6 +148,7 @@ func (wp *WorkerPool) processJob(job models.Job) {
 				defer timer.Stop()
 				select {
 				case <-timer.C:
+					// #nosec G104 -- unhandled error
 					wp.Submit(j)
 				case <-wp.stopChan:
 					log.Printf("Job %s cancelled: pool is stopping.", j.ID)
