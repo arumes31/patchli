@@ -9,35 +9,44 @@ import (
 )
 
 func TestRunWatchdog_AgentExits(t *testing.T) {
-	// Mock execCommand to exit immediately
-	oldExec := execCommand
-	execCommand = func(name string, args ...string) *exec.Cmd {
+	newCommand := func(name string, args ...string) *exec.Cmd {
 		if runtime.GOOS == "windows" {
 			return exec.Command("powershell", "-Command", "exit 0")
 		}
 		return exec.Command("true")
 	}
-	defer func() { execCommand = oldExec }()
 
 	sigChan := make(chan os.Signal, 1)
-	go runWatchdog("dummy-agent", sigChan)
-
-	time.Sleep(100 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		runWatchdog("dummy-agent", sigChan, newCommand)
+		close(done)
+	}()
 	sigChan <- os.Interrupt
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchdog did not stop")
+	}
 }
 
 func TestRunWatchdog_StartError(t *testing.T) {
-	oldExec := execCommand
-	execCommand = func(name string, args ...string) *exec.Cmd {
+	newCommand := func(name string, args ...string) *exec.Cmd {
 		return exec.Command("invalid-command-that-does-not-exist")
 	}
-	defer func() { execCommand = oldExec }()
 
 	sigChan := make(chan os.Signal, 1)
-	go runWatchdog("dummy-agent", sigChan)
-
-	time.Sleep(100 * time.Millisecond)
+	done := make(chan struct{})
+	go func() {
+		runWatchdog("dummy-agent", sigChan, newCommand)
+		close(done)
+	}()
 	sigChan <- os.Interrupt
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("watchdog did not stop")
+	}
 }
 
 func TestParseArgs(t *testing.T) {

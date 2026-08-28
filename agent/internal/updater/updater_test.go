@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -104,6 +105,9 @@ func TestDetectPackageManager(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.name == "windows" && runtime.GOOS != "windows" {
+				t.Skip("Windows package manager is available only in a Windows build")
+			}
 			statFunc = tt.mockStat
 			isWindowsFunc = func() bool { return tt.isWindows }
 			pm, err := DetectPackageManager()

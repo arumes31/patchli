@@ -99,10 +99,13 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 }
 
 func TestSaveStateError(t *testing.T) {
-	// Test SaveState with invalid path
+	// Place the state path below a regular file so MkdirAll fails on every OS.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	oldStateFile := stateFile
-	// On Windows, a path with invalid characters
-	stateFile = "Z:\\invalid\\path\\?:|/state.json"
+	stateFile = filepath.Join(blocker, "state.json")
 	defer func() { stateFile = oldStateFile }()
 
 	state := State{JobID: "test"}

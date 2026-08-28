@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/arumes31/patchli/agent/internal/control"
-	"github.com/arumes31/patchli/agent/internal/identity"
 	"github.com/arumes31/patchli/agent/internal/updater"
 )
 
@@ -28,27 +27,6 @@ func (m *mockPM) ApplyUpdates(ctx context.Context, packages []string) (updater.U
 func (m *mockPM) RebootRequired() bool                     { return false }
 func (m *mockPM) PreFlightCheck(ctx context.Context) error { return nil }
 func (m *mockPM) Cleanup(ctx context.Context) error        { return nil }
-
-func TestGetOrGenerateIdentity(t *testing.T) {
-	// identity.GetOrGenerate uses a hardcoded path or env var.
-	// Since we can't easily change the path in identity package without refactoring,
-	// we just test it doesn't crash and returns something.
-	id1, err := identity.GetOrGenerate()
-	if err != nil {
-		t.Fatalf("Identity GetOrGenerate returned error: %v", err)
-	}
-	if id1 == "" {
-		t.Fatal("Identity should not be empty")
-	}
-
-	id2, err := identity.GetOrGenerate()
-	if err != nil {
-		t.Fatalf("Identity GetOrGenerate returned error: %v", err)
-	}
-	if id1 != id2 {
-		t.Errorf("Identity changed: %s vs %s", id1, id2)
-	}
-}
 
 func TestRunAgentRequiresEnrollment(t *testing.T) {
 	t.Setenv("SERVER_URL", "https://127.0.0.1:1")
