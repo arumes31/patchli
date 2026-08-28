@@ -3,13 +3,34 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
 	"github.com/arumes31/patchli/server/internal/db"
 )
+
+const maxAuthRequestBytes = 16 << 10
+
+var validNodeID = regexp.MustCompile(`^[a-zA-Z0-9:._-]{1,128}$`)
+
+func decodeAuthRequest(w http.ResponseWriter, r *http.Request, destination any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthRequestBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("request body must contain exactly one JSON object")
+	}
+	return nil
+}
 
 type LoginRequest struct {
 	MAC       string `json:"mac"`
@@ -30,8 +51,13 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeAuthRequest(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.MAC = strings.TrimSpace(req.MAC)
+	if !validNodeID.MatchString(req.MAC) || !isValidGroupName(req.Group) {
+		http.Error(w, "Invalid registration fields", http.StatusBadRequest)
 		return
 	}
 
@@ -62,12 +88,15 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
+	// #nosec G117 -- returning the newly issued credentials is the purpose of this authenticated TLS endpoint.
 	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
 		log.Printf("Error encoding login response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Failed to write login response: %v", err)
+	}
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -77,8 +106,13 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeAuthRequest(w, r, &req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	req.MAC = strings.TrimSpace(req.MAC)
+	if !validNodeID.MatchString(req.MAC) || len(req.RefreshToken) > 8192 {
+		http.Error(w, "Invalid refresh fields", http.StatusBadRequest)
 		return
 	}
 
@@ -90,8 +124,8 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Also validate JWT signature and claims
-	claims, err := auth.ValidateToken(req.RefreshToken)
-	if err != nil || claims == nil || (*claims)["sub"] != req.MAC {
+	claims, err := auth.ValidateRefreshToken(req.RefreshToken)
+	if err != nil || claims.Subject != req.MAC {
 		http.Error(w, "Invalid refresh token payload", http.StatusUnauthorized)
 		return
 	}
@@ -119,10 +153,13 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
+	// #nosec G117 -- returning rotated credentials is the purpose of this authenticated TLS endpoint.
 	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
 		log.Printf("Error encoding refresh response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Failed to write refresh response: %v", err)
+	}
 }

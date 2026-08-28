@@ -53,7 +53,7 @@ func runMigrations(dbURL string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	driver, err := pgx.WithInstance(db, &pgx.Config{})
 	if err != nil {
@@ -64,7 +64,7 @@ func runMigrations(dbURL string) error {
 	if err != nil {
 		return err
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		return err
@@ -117,7 +117,7 @@ func hashToken(token string) string {
 
 func StoreRefreshToken(mac, token string, expiresAt time.Time) error {
 	if DB == nil {
-		return nil
+		return errors.New("database not initialized")
 	}
 	hash := hashToken(token)
 	query := "INSERT INTO refresh_tokens (mac_address, token_hash, expires_at) VALUES ($1, $2, $3)"

@@ -143,7 +143,9 @@ func TestProcessJob(t *testing.T) {
 
 func TestWorkerPoolStartStop(t *testing.T) {
 	wp := NewWorkerPool(1)
-	wp.Start()
+	if err := wp.Start(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Submit a job and verify it gets picked up
 	done := make(chan bool)
@@ -166,7 +168,15 @@ func TestWorkerPoolStartStop(t *testing.T) {
 		t.Error("Job was not processed by worker")
 	}
 
-	wp.Stop()
+	var stops sync.WaitGroup
+	for range 10 {
+		stops.Add(1)
+		go func() {
+			defer stops.Done()
+			wp.Stop()
+		}()
+	}
+	stops.Wait()
 
 	select {
 	case <-wp.stopChan:
@@ -174,6 +184,13 @@ func TestWorkerPoolStartStop(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 		t.Error("stopChan was not closed after Stop()")
 	}
+	if err := wp.Submit(models.Job{ID: "too-late"}); err == nil {
+		t.Fatal("Submit accepted a job after Stop")
+	}
+	if err := wp.Start(); err == nil {
+		t.Fatal("Start accepted a stopped pool")
+	}
+	wp.Wait()
 }
 
 func TestMonitorJobExpiration(t *testing.T) {
@@ -216,7 +233,9 @@ func TestWorkerGracefulStopWithRemainingJobs(t *testing.T) {
 	wp.Stop() // Close stopChan immediately
 
 	// Start workers - they should see stopChan closed and process remaining jobs
-	wp.Start()
+	if err := wp.Start(); err == nil {
+		t.Fatal("Start accepted a stopped pool")
+	}
 
 	// Wait a bit for jobs to be processed
 	time.Sleep(100 * time.Millisecond)
@@ -225,7 +244,7 @@ func TestWorkerGracefulStopWithRemainingJobs(t *testing.T) {
 	count := processedCount
 	mu.Unlock()
 
-	if count != 2 {
-		t.Errorf("Expected 2 jobs to be processed during graceful stop, got %d", count)
+	if count != 0 {
+		t.Errorf("Expected stopped pool to reject a later start, got %d processed jobs", count)
 	}
 }

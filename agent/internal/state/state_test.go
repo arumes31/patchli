@@ -12,7 +12,7 @@ func TestState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -63,7 +63,7 @@ func TestClearStateIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -85,7 +85,7 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "invalid.json")
@@ -117,7 +117,7 @@ func TestLoadStateError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")

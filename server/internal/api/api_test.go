@@ -14,6 +14,7 @@ import (
 
 func TestMain(m *testing.M) {
 	auth.SetTestSecrets()
+	_ = os.Setenv("BASE_URL", "https://patchli.example.test")
 	os.Exit(m.Run())
 }
 
@@ -59,8 +60,7 @@ func TestHandleSetupSecurity(t *testing.T) {
 }
 
 func TestHandleSetupUnauthorized(t *testing.T) {
-	os.Setenv("ADMIN_TOKEN", "testtoken")
-	defer os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "test-admin-token-that-is-at-least-32-bytes")
 
 	tests := []struct {
 		name       string
@@ -91,7 +91,7 @@ func TestHandleSetupUnauthorized(t *testing.T) {
 }
 
 func TestAuthMiddlewareNoAdminTokenSet(t *testing.T) {
-	os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "")
 
 	req, _ := http.NewRequest("GET", "/api/v1/setup", nil)
 	req.Header.Set("Authorization", "Bearer anything")
@@ -179,14 +179,13 @@ func TestIsValidGroupName(t *testing.T) {
 }
 
 func TestHandleNodesWithAuth(t *testing.T) {
-	os.Setenv("ADMIN_TOKEN", "testtoken")
-	defer os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "test-admin-token-that-is-at-least-32-bytes")
 
 	req, err := http.NewRequest("GET", "/api/v1/nodes", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "Bearer testtoken")
+	req.Header.Set("Authorization", "Bearer test-admin-token-that-is-at-least-32-bytes")
 
 	rr := httptest.NewRecorder()
 	handler := AuthMiddleware(HandleNodes)
@@ -199,14 +198,13 @@ func TestHandleNodesWithAuth(t *testing.T) {
 }
 
 func TestHandleStatsWithAuth(t *testing.T) {
-	os.Setenv("ADMIN_TOKEN", "testtoken")
-	defer os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "test-admin-token-that-is-at-least-32-bytes")
 
 	req, err := http.NewRequest("GET", "/api/v1/stats", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req.Header.Set("Authorization", "Bearer testtoken")
+	req.Header.Set("Authorization", "Bearer test-admin-token-that-is-at-least-32-bytes")
 
 	rr := httptest.NewRecorder()
 	handler := AuthMiddleware(HandleStats)

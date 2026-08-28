@@ -32,18 +32,13 @@ func escapePowerShell(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
 }
 
-// isTrustedProxy checks if the remote address matches the TRUSTED_PROXY environment variable.
-func isTrustedProxy(remoteAddr string) bool {
-	trustedProxy := os.Getenv("TRUSTED_PROXY")
-	if trustedProxy == "" {
-		return false
+func publicBaseURL() (string, error) {
+	raw := strings.TrimSpace(os.Getenv("BASE_URL"))
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return "", fmt.Errorf("BASE_URL must be an https origin")
 	}
-	// Strip port from remoteAddr if present
-	host := remoteAddr
-	if idx := strings.LastIndex(remoteAddr, ":"); idx != -1 {
-		host = remoteAddr[:idx]
-	}
-	return host == trustedProxy
+	return strings.TrimSuffix(parsed.String(), "/"), nil
 }
 
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +50,9 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Failed to write nodes response: %v", err)
+	}
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +89,9 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Failed to write stats response: %v", err)
+	}
 }
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
@@ -112,21 +111,11 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := auth.GenerateRegistrationSignature(group, timestamp)
 
-	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
-		scheme := "http"
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" && isTrustedProxy(r.RemoteAddr) {
-			if strings.ToLower(proto) == "https" {
-				scheme = "https"
-			}
-		} else if r.TLS != nil {
-			scheme = "https"
-		}
-		// NOTE: If TRUSTED_PROXY is not set, X-Forwarded-Proto is ignored and only r.TLS is used.
-		// This assumes no reverse proxy is in front, or that the proxy terminates TLS and
-		// the server listens on HTTPS directly. Set TRUSTED_PROXY to the proxy's IP to enable
-		// X-Forwarded-Proto trust.
-		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
+	baseURL, err := publicBaseURL()
+	if err != nil {
+		log.Printf("Invalid BASE_URL: %v", err)
+		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
+		return
 	}
 
 	var script string
@@ -140,7 +129,9 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, script)
+	if _, err := fmt.Fprint(w, script); err != nil {
+		log.Printf("Failed to write setup script: %v", err)
+	}
 }
 
 func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
@@ -149,21 +140,9 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to load setup page", http.StatusInternalServerError)
 		return
 	}
-	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
-		scheme := "http"
-		if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" && isTrustedProxy(r.RemoteAddr) {
-			if strings.ToLower(proto) == "https" {
-				scheme = "https"
-			}
-		} else if r.TLS != nil {
-			scheme = "https"
-		}
-		baseURL = fmt.Sprintf("%s://%s", scheme, r.Host)
-	}
-	parsedURL, err := url.Parse(baseURL)
-	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		log.Printf("Invalid BaseURL rejected: %q", baseURL)
+	baseURL, err := publicBaseURL()
+	if err != nil {
+		log.Printf("Invalid BASE_URL: %v", err)
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}
@@ -186,10 +165,13 @@ SIGNATURE='%s'
 SERVER_URL='%s'
 
 echo "1. Creating configuration..."
-mkdir -p /etc/patchli
-cat <<EOF > /etc/patchli/config.yaml
-server_url: $SERVER_URL
-group: $GROUP
+install -d -m 0700 /etc/patchli
+umask 077
+cat <<EOF > /etc/patchli/agent.env
+SERVER_URL='$SERVER_URL'
+REGISTRATION_GROUP='$GROUP'
+REGISTRATION_TIMESTAMP='$TIMESTAMP'
+REGISTRATION_SIGNATURE='$SIGNATURE'
 EOF
 
 echo "2. Installing systemd service..."
@@ -200,6 +182,7 @@ After=network.target
 
 [Service]
 ExecStart=/usr/local/bin/patchli-agent
+EnvironmentFile=/etc/patchli/agent.env
 Restart=always
 User=root
 
@@ -225,10 +208,13 @@ SIGNATURE='%s'
 SERVER_URL='%s'
 
 echo "1. Creating configuration..."
-mkdir -p /etc/patchli
-cat <<EOF > /etc/patchli/config.yaml
-server_url: $SERVER_URL
-group: $GROUP
+install -d -m 0700 /etc/patchli
+umask 077
+cat <<EOF > /etc/conf.d/patchli-agent
+export SERVER_URL='$SERVER_URL'
+export REGISTRATION_GROUP='$GROUP'
+export REGISTRATION_TIMESTAMP='$TIMESTAMP'
+export REGISTRATION_SIGNATURE='$SIGNATURE'
 EOF
 
 echo "2. Installing OpenRC service..."
@@ -256,10 +242,10 @@ $ServerUrl = '%s'
 Write-Host "1. Creating configuration..."
 $ConfigDir = "C:\ProgramData\Patchli"
 if (!(Test-Path -Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir | Out-Null }
-@"
-server_url: $ServerUrl
-group: $Group
-"@ | Out-File -FilePath "$ConfigDir\config.yaml" -Encoding UTF8
+[Environment]::SetEnvironmentVariable("SERVER_URL", $ServerUrl, "Machine")
+[Environment]::SetEnvironmentVariable("REGISTRATION_GROUP", $Group, "Machine")
+[Environment]::SetEnvironmentVariable("REGISTRATION_TIMESTAMP", $Timestamp, "Machine")
+[Environment]::SetEnvironmentVariable("REGISTRATION_SIGNATURE", $Signature, "Machine")
 
 Write-Host "SUCCESS: Patchli Agent configured for group: $Group"
 `, escapePowerShell(group), escapePowerShell(ts), escapePowerShell(sig), escapePowerShell(url))
@@ -270,7 +256,10 @@ func HandleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	fmt.Fprintf(w, "data: %s\n\n", `{"message": "System stream initialized", "level": "system"}`)
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", `{"message": "System stream initialized", "level": "system"}`); err != nil {
+		log.Printf("Failed to write stream response: %v", err)
+		return
+	}
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	} else {

@@ -39,6 +39,7 @@ func LoadState() (*State, error) {
 		return nil, nil
 	}
 
+	// #nosec G304 -- stateFile is fixed by the platform implementation; tests replace it with a temporary path.
 	data, err := os.ReadFile(stateFile)
 	if err != nil {
 		return nil, err

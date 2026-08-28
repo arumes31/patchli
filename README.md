@@ -1,161 +1,100 @@
-# <img src="server/static/assets/img/logo.png" width="48" height="48" valign="middle"> Patchli
+# Patchli
 
-[![CI](https://github.com/arumes31/patchli/actions/workflows/ci.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/ci.yml)
-[![CD](https://github.com/arumes31/patchli/actions/workflows/cd.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/cd.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/arumes31/patchli)](https://goreportcard.com/report/github.com/arumes31/patchli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Go CI](https://github.com/arumes31/patchli/actions/workflows/ci.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/ci.yml)
+[![Container](https://github.com/arumes31/patchli/actions/workflows/cd.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/cd.yml)
 
-### Distributed Linux Patch Management & Fleet Monitoring System
+Patchli is a central control plane and native agent for fleet patch orchestration. Agents run with operating-system update authority, so the control channel is deliberately fail-closed: every HTTP request uses verified TLS, WebSockets use WSS, and an agent identity is bound to the JWT subject.
 
-Patchli is a high-performance, distributed Patch Management system designed to seamlessly orchestrate updates across massive fleets of Linux and Windows nodes. It provides a centralized Control Plane for monitoring, scheduling, and executing updates with a focus on reliability, security, and real-time observability.
+## Security model
 
----
+- `SERVER_URL` and `BASE_URL` are complete `https://` origins. Plain HTTP and WS are rejected.
+- A private control-plane CA can be mounted on an agent and selected with `SERVER_CA_FILE`. Certificate verification cannot be disabled.
+- Registration uses a short-lived HMAC signature. Successful enrollment stores access and refresh tokens in a mode `0600` file; refresh tokens rotate.
+- Access and refresh JWTs have distinct purposes, issuer/audience checks, expiry, and subject binding. A refresh token cannot open a WebSocket.
+- Dashboard administration uses a separate `ADMIN_TOKEN`. All three server secrets must be independently generated; signing secrets require at least 32 bytes.
+- Agent self-updates are downloaded through the verified control channel, size-bounded, and then checked with the configured Ed25519 public key.
+- The server image is non-root. The agent itself is privileged by design when installed natively; do not give its optional container the host root, Docker socket, or unrelated capabilities.
 
-## 🏗️ Architecture
+## Deploy the control plane
 
-Patchli follows a robust client-server architecture. The **Control Plane** manages the fleet state and orchestrates jobs, while lightweight **Agents** execute tasks locally on each node.
+Copy `.env.example` to `.env`, fill every required blank, and provide a certificate whose SAN covers the hostname in `BASE_URL`:
 
-```mermaid
-graph TD
-    subgraph "Control Plane (Server)"
-        API[API Gateway / HTTP Server]
-        WP[Worker Pool]
-        DB[(PostgreSQL)]
-        Cache[(Redis)]
-        WS[WebSocket Manager]
-    end
-
-    subgraph "Managed Fleet (Agents)"
-        Agent1[Patchli Agent 1]
-        Agent2[Patchli Agent 2]
-        AgentN[Patchli Agent N]
-    end
-
-    Agent1 <--> WS
-    Agent2 <--> WS
-    AgentN <--> WS
-    
-    API <--> DB
-    API <--> Cache
-    WP <--> DB
-    WP <--> Cache
-    WS <--> WP
+```sh
+docker compose config
+docker compose up -d --build
 ```
 
----
+The compose deployment:
 
-## 🔐 Zero-Touch Registration
+- publishes TLS on `127.0.0.1:8443` by default (set the exact private/VPN bind address explicitly when needed);
+- keeps PostgreSQL on an internal network with no host port;
+- runs the server with a read-only root filesystem, all capabilities dropped, and `no-new-privileges`;
+- uses pinned base/service image digests.
 
-Agents register themselves securely using an HMAC-signed setup script. Once registered, they receive a persistent JWT for all future communications.
+Use a reverse proxy only when it preserves end-to-end HTTPS and the agent still validates the certificate presented at `SERVER_URL`.
 
-```mermaid
-sequenceDiagram
-    participant A as Patchli Agent
-    participant S as Control Plane
-    participant DB as Database
+## Required configuration
 
-    A->>S: POST /api/v1/setup (HMAC Signature + UUID)
-    Note over S: Validate HMAC (REGISTRATION_SECRET)
-    S->>DB: Store Node Identity
-    S-->>A: HTTP 201 + JWT Agent Token
-    A->>S: WebSocket Connection (JWT Auth)
-    S-->>A: Connected (Real-time Link)
+### Server
+
+| Variable | Purpose |
+| --- | --- |
+| `DB_URL` | Required PostgreSQL DSN. |
+| `JWT_SECRET` | Independent random JWT signing secret, at least 32 bytes. |
+| `REGISTRATION_SECRET` | Independent random enrollment HMAC secret, at least 32 bytes. |
+| `ADMIN_TOKEN` | Independent random dashboard/API bearer, at least 32 bytes. |
+| `BASE_URL` | Public HTTPS origin, with no path, credentials, query, or fragment. |
+| `TLS_CERT_FILE` / `TLS_KEY_FILE` | Readable TLS certificate and private-key files. |
+| `PORT` | TLS listen port; defaults to `8443`. |
+| `*_WEBHOOK_URL` | Optional HTTPS Slack, Teams, or Discord webhook. Private/link-local destinations are rejected. |
+
+### Agent
+
+| Variable | Purpose |
+| --- | --- |
+| `SERVER_URL` | Required verified HTTPS control-plane origin. |
+| `SERVER_CA_FILE` | Optional PEM CA bundle for a private PKI. |
+| `TRUSTED_PUB_KEY` | Base64 Ed25519 public key required for self-update verification. |
+| `ALLOW_REMOTE_SCRIPTS` | Set exactly `true` only when pre/post/health shell execution is intentionally authorized; defaults to disabled. |
+| `REGISTRATION_GROUP` | One-time enrollment group generated by the setup endpoint. |
+| `REGISTRATION_TIMESTAMP` | One-time enrollment timestamp. |
+| `REGISTRATION_SIGNATURE` | One-time enrollment HMAC signature. |
+
+The setup endpoint emits OS-specific configuration with those one-time values. After successful enrollment, rotate/remove the enrollment values where practical; their short validity prevents later reuse. Keep `/etc/patchli` or `C:\ProgramData\Patchli` readable only by administrators.
+
+Run agent diagnostics with:
+
+```sh
+patchli-agent --verify
 ```
 
----
+## Migrating from a plaintext deployment
 
-## ✨ Key Features
+This release intentionally breaks plaintext control channels.
 
-- **🚀 Performance**: Go-based architecture with gRPC-ready design and non-blocking worker pools.
-- **🛡️ Resilience**: Self-healing watchdog, HTTP long-polling fallback, and state recovery after reboots.
-- **📦 Multi-OS Support**: Native support for **APT** (Debian/Ubuntu), **APK** (Alpine), **DNF/YUM** (RHEL/Rocky), **Pacman** (Arch), **Zypper** (SUSE), and **WUA** (Windows).
-- **🔒 Security**: HMAC-based zero-touch registration, JWT persistent authentication, and pre-patch lock checks.
-- **🛠️ Orchestration**: Maintenance windows, pre/post-patch scripts, and remote health checks.
-- **📈 Observability**: Real-time log streaming via WebSockets and detailed fleet metrics.
+1. Deploy a valid TLS certificate and change `BASE_URL`/`SERVER_URL` to an HTTPS origin.
+2. Rotate `JWT_SECRET`, `REGISTRATION_SECRET`, `ADMIN_TOKEN`, every agent access/refresh token, and any token that crossed the old HTTP/WS connection. Existing agents must enroll again.
+3. Remove old source-known/example database passwords and webhook URLs from deployment history.
+4. Stop exposing PostgreSQL or Redis ports. Redis was unused and has been removed from the reference deployment.
+5. Bind the control plane only to the intended private or VPN interface, then require the new CI/security checks in branch protection.
+6. Review network and server logs for unexpected historical auth, polling, update, or WebSocket traffic.
 
----
+## Development and verification
 
-## ⚙️ Configuration Reference
+The repository has separate Go modules:
 
-### Control Plane (Server)
+```sh
+cd server
+go test ./...
+go vet ./...
 
-| Variable | Description | Default | Required |
-| :--- | :--- | :--- | :--- |
-| `DB_URL` | PostgreSQL connection string (`postgres://...`) | - | **Yes** |
-| `REDIS_URL` | Redis connection string (`redis:6379`) | - | **Yes** |
-| `PORT` | Listening port for the API and Dashboard | `8080` | No |
-| `JWT_SECRET` | Secret key for signing Agent authentication tokens | - | **Yes** |
-| `REGISTRATION_SECRET` | Secret key for generating HMAC setup signatures | - | **Yes** |
-| `BASE_URL` | External URL of the server (e.g., `https://patch.example.com`) | `http://localhost:8080` | No |
-
-### Intelligent Agent
-
-| Flag | Description |
-| :--- | :--- |
-| `--verify` | Performs self-diagnosis (identity, PM detection, network) and exits. |
-
-| Variable | Description | Default |
-| :--- | :--- | :--- |
-| `SERVER_URL` | Host and port of the Patchli Control Plane | `localhost:8080` |
-| `TRUSTED_PUB_KEY` | Ed25519 public key (Base64) to verify downloaded binaries during self-update | - |
-
----
-
-## 🚀 Getting Started
-
-### 1. Deploy the Control Plane
-The easiest way to start is using Docker Compose:
-
-```bash
-docker-compose up -d
+cd ../agent
+go test ./...
+go vet ./...
 ```
 
-### 2. Access the Dashboard
-Navigate to `http://localhost:8080/` and log in.
+CI additionally runs the race detector, golangci-lint, govulncheck, gosec, CodeQL, multi-image builds, and Trivy. Published images include SBOM and provenance attestations.
 
-### 3. Add Your First Agent
-1. Go to the **Add Agent** section.
-2. Select your OS (Linux, Alpine, or Windows).
-3. Copy the generated one-liner and run it on your target node.
-4. The node will appear in the dashboard automatically.
+## License
 
----
-
-## 🛠️ Development
-
-### Local Setup
-```bash
-# Run server
-cd server && go run ./cmd/patchli-server/main.go
-
-# Run agent
-cd agent && go run ./cmd/patchli-agent/main.go
-```
-
-### Testing & Quality
-We maintain a strict quality standard with **80% code coverage** enforcement.
-
-```bash
-# Run all tests
-go test ./... -cover
-
-# Run security scan
-gosec ./...
-```
-
----
-
-## 📄 License
-Patchli is released under the [MIT License](LICENSE).
-```bash
-# Run all tests
-go test ./... -cover
-
-# Run security scan
-gosec ./...
-```
-
----
-
-## 📄 License
 Patchli is released under the [MIT License](LICENSE).

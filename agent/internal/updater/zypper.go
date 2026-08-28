@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	
 )
 
 // ZypperManager implements the PackageManager interface for zypper (SUSE).
@@ -12,7 +11,7 @@ type ZypperManager struct{}
 
 func (m *ZypperManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 	cmd := execCommandContext(ctx, "zypper", "--non-interactive", "refresh")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -41,7 +40,7 @@ func (m *ZypperManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 	}
 
 	cmd := execCommandContext(ctx, "zypper", args...)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -70,4 +69,3 @@ func (m *ZypperManager) PreFlightCheck(ctx context.Context) error {
 func (m *ZypperManager) Cleanup(ctx context.Context) error {
 	return execCommandContext(ctx, "zypper", "clean", "-a").Run()
 }
-

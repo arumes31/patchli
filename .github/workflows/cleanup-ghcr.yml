@@ -15,16 +15,19 @@ on:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       packages: write
     
     steps:
       - name: Extract repository name
         shell: bash
-        run: echo "REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)" >> $GITHUB_ENV
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "REPO_NAME=${REPOSITORY#*/}" >> "$GITHUB_ENV"
 
       - name: Cleanup Server images
-        uses: actions/delete-package-versions@v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
           package-name: '${{ env.REPO_NAME }}/server'
           package-type: 'container'
@@ -33,7 +36,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cleanup Agent images
-        uses: actions/delete-package-versions@v5
+        uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5
         with:
           package-name: '${{ env.REPO_NAME }}/agent'
           package-type: 'container'

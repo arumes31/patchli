@@ -13,7 +13,7 @@ func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		adminToken := os.Getenv("ADMIN_TOKEN")
 
 		// If ADMIN_TOKEN is not set, we default to unauthorized for safety.
-		if adminToken == "" {
+		if len(adminToken) < 32 {
 			http.Error(w, "Unauthorized - Server Configuration Error", http.StatusUnauthorized)
 			return
 		}

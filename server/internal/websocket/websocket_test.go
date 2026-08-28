@@ -33,7 +33,7 @@ func TestHandleWebSocket(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to connect to websocket: %v", err)
 		}
-		defer ws.Close()
+		defer func() { _ = ws.Close() }()
 
 		heartbeat := struct {
 			Type    string          `json:"type"`
@@ -59,7 +59,7 @@ func TestHandleWebSocket(t *testing.T) {
 	t.Run("Invalid JSON", func(t *testing.T) {
 		ws, _, _ := websocket.DefaultDialer.Dial(u, header)
 		if ws != nil {
-			defer ws.Close()
+			defer func() { _ = ws.Close() }()
 			_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid json"))
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -77,10 +77,67 @@ func TestHandleWebSocket(t *testing.T) {
 			}
 			_ = ws.WriteJSON(heartbeat)
 			time.Sleep(50 * time.Millisecond)
-			ws.Close()
+			_ = ws.Close()
 			time.Sleep(50 * time.Millisecond)
 		}
 	})
+}
+
+func TestHandleWebSocketBindsHeartbeatToTokenSubject(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(HandleWebSocket))
+	defer s.Close()
+
+	token, err := auth.GenerateAgentJWT("expected-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"Authorization": {"Bearer " + token}}
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.URL, "http"), header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	heartbeat := map[string]any{
+		"type":    "heartbeat",
+		"payload": map[string]any{"mac_address": "impersonated-agent", "hostname": "attacker"},
+	}
+	if err := conn.WriteJSON(heartbeat); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("server kept an identity-mismatched WebSocket open")
+	}
+}
+
+func TestHandleWebSocketRejectsRefreshTokenAndCrossOriginBrowser(t *testing.T) {
+	t.Setenv("BASE_URL", "https://patchli.example.test")
+	s := httptest.NewServer(http.HandlerFunc(HandleWebSocket))
+	defer s.Close()
+
+	pair, err := auth.GenerateTokenPair("agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"Authorization": {"Bearer " + pair.RefreshToken}}
+	if conn, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.URL, "http"), header); err == nil {
+		_ = conn.Close()
+		t.Fatal("refresh token was accepted for WebSocket access")
+	} else if response == nil || response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("refresh token status = %v, error = %v", response, err)
+	}
+
+	accessHeader := http.Header{
+		"Authorization": {"Bearer " + pair.AccessToken},
+		"Origin":        {"https://evil.example"},
+	}
+	if conn, response, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.URL, "http"), accessHeader); err == nil {
+		_ = conn.Close()
+		t.Fatal("cross-origin browser WebSocket was accepted")
+	} else if response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin status = %v, error = %v", response, err)
+	}
 }
 
 func FuzzMessage(f *testing.F) {

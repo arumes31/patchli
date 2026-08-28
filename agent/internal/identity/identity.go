@@ -25,6 +25,7 @@ func init() {
 }
 
 func GetOrGenerate() (string, error) {
+	// #nosec G304 -- idFile is fixed by the platform implementation; tests replace it with a temporary path.
 	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
 		parsed := strings.TrimSpace(string(data))
 		if _, err := uuid.Parse(parsed); err == nil {

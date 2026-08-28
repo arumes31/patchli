@@ -18,7 +18,7 @@ func TestGetOrGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 		idFile = filepath.Join(tmpDir, "node_id")
 
@@ -45,7 +45,7 @@ func TestGetOrGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 		idFile = filepath.Join(tmpDir, "node_id")
 		expectedID := uuid.New().String()
@@ -67,7 +67,7 @@ func TestGetOrGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tmpDir)
+		t.Cleanup(func() { _ = os.RemoveAll(tmpDir) })
 
 		idFile = filepath.Join(tmpDir, "node_id")
 		if err := os.WriteFile(idFile, []byte("invalid-uuid"), 0600); err != nil {
