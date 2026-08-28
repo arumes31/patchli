@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var execCommand = exec.Command
+type commandFactory func(string, ...string) *exec.Cmd
 
 func main() {
 	agentPath := parseArgs(os.Args)
@@ -17,7 +17,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	runWatchdog(agentPath, sigChan)
+	runWatchdog(agentPath, sigChan, exec.Command)
 }
 
 func parseArgs(args []string) string {
@@ -28,11 +28,12 @@ func parseArgs(args []string) string {
 	return agentPath
 }
 
-func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
-	log.Printf("Starting Patchli Watchdog for %s", agentPath)
+func runWatchdog(agentPath string, sigChan <-chan os.Signal, newCommand commandFactory) {
+	// #nosec G706 -- %q escapes control characters in the operator-supplied executable path.
+	log.Printf("Starting Patchli Watchdog for %q", agentPath)
 
 	for {
-		cmd := execCommand(agentPath)
+		cmd := newCommand(agentPath)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 

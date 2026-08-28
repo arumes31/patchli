@@ -8,7 +8,7 @@ func TestNotifyWebhooks(t *testing.T) {
 	// Mock NotifyWebhooks
 	oldNotify := NotifyWebhooks
 	defer func() { NotifyWebhooks = oldNotify }()
-	
+
 	var called bool
 	NotifyWebhooks = func(payload WebhookPayload) {
 		called = true

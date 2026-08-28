@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -15,6 +14,7 @@ import (
 )
 
 func setupHandlers(t *testing.T) {
+	t.Setenv("BASE_URL", "https://patchli.example.test")
 	fleet.Registry.Reset()
 	t.Cleanup(func() {
 		fleet.Registry.Reset()
@@ -80,11 +80,13 @@ func TestHandleStats(t *testing.T) {
 		rr := httptest.NewRecorder()
 		HandleStats(rr, req)
 		var stats struct {
-			Vitality  int    `json:"vitality"`
-			Immune    string `json:"immune"`
-			Recovery  int    `json:"recovery"`
+			Vitality int    `json:"vitality"`
+			Immune   string `json:"immune"`
+			Recovery int    `json:"recovery"`
 		}
-		json.Unmarshal(rr.Body.Bytes(), &stats)
+		if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+			t.Fatal(err)
+		}
 		if stats.Vitality != 0 || stats.Immune != "0%" {
 			t.Errorf("Expected 0 stats, got %+v", stats)
 		}
@@ -106,11 +108,13 @@ func TestHandleStats(t *testing.T) {
 		HandleStats(rr, req)
 
 		var stats struct {
-			Vitality  int    `json:"vitality"`
-			Immune    string `json:"immune"`
-			Recovery  int    `json:"recovery"`
+			Vitality int    `json:"vitality"`
+			Immune   string `json:"immune"`
+			Recovery int    `json:"recovery"`
 		}
-		json.Unmarshal(rr.Body.Bytes(), &stats)
+		if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+			t.Fatal(err)
+		}
 
 		if stats.Vitality != 3 {
 			t.Errorf("expected vitality 3, got %d", stats.Vitality)
@@ -129,13 +133,13 @@ func TestHandleSetup(t *testing.T) {
 	setupHandlers(t)
 
 	tests := []struct {
-		name            string
-		query           string
-		header          map[string]string
-		env             map[string]string
-		useTLS          bool
-		expectedInBody  []string
-		expectedStatus  int
+		name           string
+		query          string
+		header         map[string]string
+		env            map[string]string
+		useTLS         bool
+		expectedInBody []string
+		expectedStatus int
 	}{
 		{
 			name:           "Defaults",
@@ -194,8 +198,7 @@ func TestHandleSetup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set env
 			for k, v := range tt.env {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
 			req, err := http.NewRequest("GET", "/api/v1/setup?"+tt.query, nil)
@@ -258,8 +261,7 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With BASE_URL", func(t *testing.T) {
-		os.Setenv("BASE_URL", "http://custom.base.url")
-		defer os.Unsetenv("BASE_URL")
+		t.Setenv("BASE_URL", "http://custom.base.url")
 
 		req, err := http.NewRequest("GET", "/setup", nil)
 		if err != nil {
@@ -269,8 +271,8 @@ func TestServeSetupUI(t *testing.T) {
 		rr := httptest.NewRecorder()
 		ServeSetupUI(rr, req)
 
-		if status := rr.Code; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+		if status := rr.Code; status != http.StatusInternalServerError {
+			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusInternalServerError)
 		}
 	})
 

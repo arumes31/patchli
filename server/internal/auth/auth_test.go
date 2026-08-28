@@ -55,12 +55,12 @@ func TestGenerateAgentJWT(t *testing.T) {
 		t.Error("Generated token is empty")
 	}
 
-	claims, err := ValidateToken(token)
+	claims, err := ValidateAccessToken(token)
 	if err != nil {
 		t.Fatalf("Failed to validate token: %v", err)
 	}
-	if (*claims)["sub"] != "00:11:22:33:44:55" {
-		t.Errorf("Expected sub claim to be 00:11:22:33:44:55, got %v", (*claims)["sub"])
+	if claims.Subject != "00:11:22:33:44:55" {
+		t.Errorf("Expected sub claim to be 00:11:22:33:44:55, got %v", claims.Subject)
 	}
 }
 
@@ -75,19 +75,22 @@ func TestGenerateTokenPair(t *testing.T) {
 		t.Error("Generated tokens should not be empty")
 	}
 
-	accessClaims, err := ValidateToken(pair.AccessToken)
+	accessClaims, err := ValidateAccessToken(pair.AccessToken)
 	if err != nil {
 		t.Fatalf("Failed to validate access token: %v", err)
 	}
-	if (*accessClaims)["sub"] != mac {
-		t.Errorf("Expected sub claim to be %s, got %v", mac, (*accessClaims)["sub"])
+	if accessClaims.Subject != mac {
+		t.Errorf("Expected sub claim to be %s, got %v", mac, accessClaims.Subject)
 	}
 
-	refreshClaims, err := ValidateToken(pair.RefreshToken)
+	refreshClaims, err := ValidateRefreshToken(pair.RefreshToken)
 	if err != nil {
 		t.Fatalf("Failed to validate refresh token: %v", err)
 	}
-	if (*refreshClaims)["sub"] != mac {
-		t.Errorf("Expected sub claim to be %s, got %v", mac, (*refreshClaims)["sub"])
+	if refreshClaims.Subject != mac {
+		t.Errorf("Expected sub claim to be %s, got %v", mac, refreshClaims.Subject)
+	}
+	if _, err := ValidateAccessToken(pair.RefreshToken); err == nil {
+		t.Fatal("refresh token accepted as an access token")
 	}
 }

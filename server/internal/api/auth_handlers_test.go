@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/arumes31/patchli/server/internal/auth"
+	"github.com/arumes31/patchli/server/internal/db"
 )
 
 func TestHandleAgentLogin_Unauthorized(t *testing.T) {
@@ -31,6 +33,17 @@ func TestHandleAgentLogin_Unauthorized(t *testing.T) {
 }
 
 func TestHandleAgentLogin_Success(t *testing.T) {
+	database, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.DB = database
+	t.Cleanup(func() {
+		db.DB = nil
+		_ = database.Close()
+	})
+	mock.ExpectExec("INSERT INTO refresh_tokens").WithArgs("00:11:22:33:44:55", sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+
 	timestamp := time.Now().Format(time.RFC3339)
 	signature := auth.GenerateRegistrationSignature("default", timestamp)
 
@@ -45,8 +58,6 @@ func TestHandleAgentLogin_Success(t *testing.T) {
 	req, _ := http.NewRequest("POST", "/api/v1/auth/login", bytes.NewBuffer(body))
 	rr := httptest.NewRecorder()
 
-	// We don't have a real DB in this unit test, but db.DB is nil,
-	// and our StoreRefreshToken handles nil DB gracefully by returning nil error.
 	HandleAgentLogin(rr, req)
 
 	if status := rr.Code; status != http.StatusOK {
@@ -59,5 +70,8 @@ func TestHandleAgentLogin_Success(t *testing.T) {
 	}
 	if pair.AccessToken == "" || pair.RefreshToken == "" {
 		t.Error("Returned tokens should not be empty")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

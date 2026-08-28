@@ -24,7 +24,11 @@ type WorkerPool struct {
 	pausedGroups    map[int]bool
 	pauseCond       *sync.Cond
 	mu              sync.Mutex
+	lifecycleMu     sync.Mutex
+	started         bool
+	stopped         bool
 	stopChan        chan struct{}
+	stopOnce        sync.Once
 	wg              sync.WaitGroup
 }
 
@@ -40,23 +44,37 @@ func NewWorkerPool(maxWorkers int) *WorkerPool {
 	return wp
 }
 
-func (wp *WorkerPool) Start() {
+func (wp *WorkerPool) Start() error {
+	wp.lifecycleMu.Lock()
+	defer wp.lifecycleMu.Unlock()
+	if wp.stopped {
+		return errors.New("worker pool is stopped")
+	}
+	if wp.started {
+		return nil
+	}
+	wp.started = true
 	for i := 0; i < wp.maxWorkers; i++ {
 		wp.wg.Add(1)
 		go wp.worker()
 	}
+	return nil
 }
 
 func (wp *WorkerPool) Stop() {
-	// Resume all paused groups so workers can exit
-	wp.mu.Lock()
-	for gid := range wp.pausedGroups {
-		wp.pausedGroups[gid] = false
-	}
-	wp.pauseCond.Broadcast()
-	wp.mu.Unlock()
+	wp.stopOnce.Do(func() {
+		wp.lifecycleMu.Lock()
+		wp.stopped = true
+		close(wp.stopChan)
+		wp.lifecycleMu.Unlock()
 
-	close(wp.stopChan)
+		wp.mu.Lock()
+		for gid := range wp.pausedGroups {
+			wp.pausedGroups[gid] = false
+		}
+		wp.pauseCond.Broadcast()
+		wp.mu.Unlock()
+	})
 }
 
 // Wait blocks until all workers have finished. Must be called after Stop().
@@ -65,11 +83,30 @@ func (wp *WorkerPool) Wait() {
 }
 
 func (wp *WorkerPool) Submit(job models.Job) error {
-	select {
-	case wp.jobQueue <- job:
-		return nil
-	case <-time.After(30 * time.Second):
-		return errors.New("job submission timed out: queue is full")
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+	retry := time.NewTicker(10 * time.Millisecond)
+	defer retry.Stop()
+	for {
+		wp.lifecycleMu.Lock()
+		if wp.stopped {
+			wp.lifecycleMu.Unlock()
+			return errors.New("worker pool is stopped")
+		}
+		select {
+		case wp.jobQueue <- job:
+			wp.lifecycleMu.Unlock()
+			return nil
+		default:
+			wp.lifecycleMu.Unlock()
+		}
+		select {
+		case <-wp.stopChan:
+			return errors.New("worker pool is stopped")
+		case <-timer.C:
+			return errors.New("job submission timed out: queue is full")
+		case <-retry.C:
+		}
 	}
 }
 
@@ -139,7 +176,9 @@ func (wp *WorkerPool) processJob(job models.Job) {
 		}
 		if now.Before(job.MaintenanceWindow.StartTime) {
 			log.Printf("Job %s delayed: Outside window.", job.ID)
+			wp.wg.Add(1)
 			go func(j models.Job) {
+				defer wp.wg.Done()
 				delay := time.Until(j.MaintenanceWindow.StartTime)
 				if delay < 10*time.Second {
 					delay = 10 * time.Second
@@ -148,7 +187,9 @@ func (wp *WorkerPool) processJob(job models.Job) {
 				defer timer.Stop()
 				select {
 				case <-timer.C:
-					wp.Submit(j)
+					if err := wp.Submit(j); err != nil {
+						log.Printf("Delayed job %s was not resubmitted: %v", j.ID, err)
+					}
 				case <-wp.stopChan:
 					log.Printf("Job %s cancelled: pool is stopping.", j.ID)
 				}
@@ -191,7 +232,11 @@ func (wp *WorkerPool) processJob(job models.Job) {
 		return
 	}
 
-	go wp.monitorJobExpiration(job)
+	wp.wg.Add(1)
+	go func() {
+		defer wp.wg.Done()
+		wp.monitorJobExpiration(job)
+	}()
 
 	notifyWebhooks(webhooks.WebhookPayload{
 		Event:   "job_started",

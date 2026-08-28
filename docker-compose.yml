@@ -1,62 +1,64 @@
-version: '3.8'
-
 services:
   server:
     build:
       context: ./server
-      dockerfile: Dockerfile
     ports:
-      - "8080:8080"
+      - "${PATCHLI_BIND_ADDRESS:-127.0.0.1}:${PATCHLI_PORT:-8443}:8443"
     environment:
-      # Required
-      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:?database password required}@postgres:5432/patchli?sslmode=disable
-      - REDIS_URL=${REDIS_URL:-redis:6379}
-      - JWT_SECRET=${JWT_SECRET:?JWT secret required}
-      - REGISTRATION_SECRET=${REGISTRATION_SECRET:?registration secret required}
-      # Optional
-      - PORT=${PORT:-8080}
-      - BASE_URL=${BASE_URL:-http://localhost:8080}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
-      - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
-      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL:-}
+      DB_URL: postgres://patchli:${POSTGRES_PASSWORD:?database password required}@postgres:5432/patchli?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?JWT signing secret required}
+      REGISTRATION_SECRET: ${REGISTRATION_SECRET:?registration signing secret required}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:?admin API token required}
+      BASE_URL: ${BASE_URL:?public HTTPS origin required}
+      PORT: "8443"
+      TLS_CERT_FILE: /run/tls/tls.crt
+      TLS_KEY_FILE: /run/tls/tls.key
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
+      postgres:
+        condition: service_healthy
     volumes:
-      - ./data/server:/app/data
-
-  agent:
-    build:
-      context: ./agent
-      dockerfile: Dockerfile
-    environment:
-      # Required
-      - SERVER_URL=${SERVER_URL:-server:8080}
-      # Optional
-      - TRUSTED_PUB_KEY=${TRUSTED_PUB_KEY:-}
-    depends_on:
-      - server
+      - type: bind
+        source: ${TLS_CERT_FILE:?TLS certificate path required}
+        target: /run/tls/tls.crt
+        read_only: true
+      - type: bind
+        source: ${TLS_KEY_FILE:?TLS private-key path required}
+        target: /run/tls/tls.key
+        read_only: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    init: true
     restart: unless-stopped
-    # Use privileged/bind mounts if the agent needs host access
-    # privileged: true
-    # volumes:
-    #   - /:/host:ro
+    networks: [backend]
 
   postgres:
-    image: postgres:15-alpine
-    ports:
-      - "5432:5432"
+    image: postgres:15.19-alpine3.24@sha256:fe0737ba566a2c5b2a28f34433c0a423261900ec17b9bf7ad115e1aae7e57f1b
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?database password required}
-      - POSTGRES_DB=patchli
+      POSTGRES_USER: patchli
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?database password required}
+      POSTGRES_DB: patchli
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U patchli -d patchli"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
+    networks: [backend]
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    restart: unless-stopped
+volumes:
+  postgres-data:
+
+networks:
+  backend:
+    internal: true

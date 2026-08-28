@@ -1,0 +1,6 @@
+.git
+.github
+coverage*
+gosec_report
+**/*_test.go
+Dockerfile*

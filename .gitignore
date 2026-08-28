@@ -4,6 +4,8 @@
 coverage.out
 coverage.html
 coverage.txt
+coverage
+gosec_report
 .cover/
 *.coverprofile
 

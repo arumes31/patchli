@@ -80,4 +80,15 @@ func TestCheckDiskSpace_Unix(t *testing.T) {
 			t.Error("Expected error for zero block size, got nil")
 		}
 	})
+
+	t.Run("negative bsize", func(t *testing.T) {
+		syscallStatfs = func(path string, stat *syscall.Statfs_t) error {
+			stat.Bsize = -1
+			stat.Bavail = 100000
+			return nil
+		}
+		if err := CheckDiskSpace("/some/path", 1); err == nil {
+			t.Error("Expected error for negative block size, got nil")
+		}
+	})
 }

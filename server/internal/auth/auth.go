@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -20,52 +21,55 @@ var (
 const (
 	AccessTokenDuration  = time.Hour * 1
 	RefreshTokenDuration = time.Hour * 24 * 7
+	tokenIssuer          = "patchli"
+	tokenAudience        = "patchli-agent"
+	accessTokenUse       = "access"
+	refreshTokenUse      = "refresh"
+	minimumSecretBytes   = 32
 )
+
+type Claims struct {
+	TokenUse string `json:"token_use"`
+	jwt.RegisteredClaims
+}
 
 type TokenPair struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 }
 
-// InitSecrets loads secrets from environment variables. In production, the
-// server main function calls this and panics if either variable is empty.
-// During testing, SetTestSecrets can be used instead.
-func InitSecrets() {
-	registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
-	jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-	if len(registrationSecret) == 0 || len(jwtSecret) == 0 {
-		panic("REGISTRATION_SECRET and JWT_SECRET must be set")
+// InitSecrets loads and validates independent high-entropy signing secrets.
+func InitSecrets() error {
+	registration := os.Getenv("REGISTRATION_SECRET")
+	jwtSigning := os.Getenv("JWT_SECRET")
+	if len(registration) < minimumSecretBytes || len(jwtSigning) < minimumSecretBytes {
+		return fmt.Errorf("REGISTRATION_SECRET and JWT_SECRET must each contain at least %d bytes", minimumSecretBytes)
 	}
+	if strings.TrimSpace(registration) != registration || strings.TrimSpace(jwtSigning) != jwtSigning {
+		return errors.New("signing secrets must not have leading or trailing whitespace")
+	}
+	if registration == jwtSigning {
+		return errors.New("REGISTRATION_SECRET and JWT_SECRET must be distinct")
+	}
+	registrationSecret = []byte(registration)
+	jwtSecret = []byte(jwtSigning)
+	return nil
 }
 
 // SetTestSecrets sets dummy secrets for unit tests.
 func SetTestSecrets() {
-	registrationSecret = []byte("test-registration-secret")
+	registrationSecret = []byte("test-registration-secret-32-bytes-long")
 	jwtSecret = []byte("test-jwt-secret-that-is-long-enough")
-}
-
-func init() {
-	// Auto-initialize from env vars if set; otherwise defer to explicit
-	// InitSecrets (production) or SetTestSecrets (tests).
-	if os.Getenv("REGISTRATION_SECRET") != "" && os.Getenv("JWT_SECRET") != "" {
-		registrationSecret = []byte(os.Getenv("REGISTRATION_SECRET"))
-		jwtSecret = []byte(os.Getenv("JWT_SECRET"))
-	}
 }
 
 func GenerateRegistrationSignature(group string, timestamp string) string {
 	h := hmac.New(sha256.New, registrationSecret)
-	h.Write([]byte(fmt.Sprintf("%s:%s", group, timestamp)))
+	_, _ = fmt.Fprintf(h, "%s:%s", group, timestamp)
 	return hex.EncodeToString(h.Sum(nil))
 }
 
 func GenerateAgentJWT(macAddr string) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": macAddr,
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(AccessTokenDuration).Unix(),
-	})
-	return token.SignedString(jwtSecret)
+	return generateToken(macAddr, accessTokenUse, AccessTokenDuration)
 }
 
 func GenerateTokenPair(macAddr string) (*TokenPair, error) {
@@ -74,12 +78,7 @@ func GenerateTokenPair(macAddr string) (*TokenPair, error) {
 		return nil, err
 	}
 
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": macAddr,
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(RefreshTokenDuration).Unix(),
-	})
-	refreshStr, err := refreshToken.SignedString(jwtSecret)
+	refreshStr, err := generateToken(macAddr, refreshTokenUse, RefreshTokenDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -90,23 +89,44 @@ func GenerateTokenPair(macAddr string) (*TokenPair, error) {
 	}, nil
 }
 
-func ValidateToken(tokenStr string) (*jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+func generateToken(subject, tokenUse string, duration time.Duration) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		TokenUse: tokenUse,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    tokenIssuer,
+			Subject:   subject,
+			Audience:  jwt.ClaimStrings{tokenAudience}, // #nosec G101 -- public JWT audience, not a credential.
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-30 * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
+		},
+	}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret)
+}
+
+func validateToken(tokenString, expectedUse string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, errors.New("unexpected signing method")
 		}
 		return jwtSecret, nil
-	})
-
-	if err != nil {
-		return nil, err
+	}, jwt.WithIssuer(tokenIssuer), jwt.WithAudience(tokenAudience), jwt.WithExpirationRequired(), jwt.WithIssuedAt())
+	if err != nil || !token.Valid || claims.TokenUse != expectedUse || claims.Subject == "" {
+		return nil, errors.New("invalid token")
 	}
+	return claims, nil
+}
 
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		return &claims, nil
-	}
+// ValidateAccessToken verifies an access token and returns its bound agent subject.
+func ValidateAccessToken(tokenString string) (*Claims, error) {
+	return validateToken(tokenString, accessTokenUse)
+}
 
-	return nil, errors.New("invalid token")
+// ValidateRefreshToken verifies a refresh token and returns its bound agent subject.
+func ValidateRefreshToken(tokenString string) (*Claims, error) {
+	return validateToken(tokenString, refreshTokenUse)
 }
 
 func ValidateRegistration(group, timestamp, signature string) bool {

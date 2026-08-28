@@ -2,7 +2,10 @@ package webhooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -10,6 +13,38 @@ import (
 	"os"
 	"time"
 )
+
+var webhookClient = &http.Client{
+	Timeout: 10 * time.Second,
+	CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+	Transport: &http.Transport{
+		DialContext: safeDialContext,
+	},
+}
+
+func safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve webhook host: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, errors.New("webhook host has no addresses")
+	}
+	for _, resolved := range addresses {
+		ip := resolved.IP
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
+			return nil, errors.New("webhook host resolves to a non-public address")
+		}
+	}
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	return dialer.DialContext(ctx, network, net.JoinHostPort(addresses[0].IP.String(), port))
+}
 
 type WebhookPayload struct {
 	Event   string `json:"event"`
@@ -30,7 +65,7 @@ var NotifyWebhooks = func(payload WebhookPayload) {
 			continue
 		}
 		if !isValidURL(u) {
-			log.Printf("Invalid or insecure webhook URL: %s", u)
+			log.Printf("Rejected invalid or insecure webhook URL")
 			continue
 		}
 		go sendWebhook(u, payload)
@@ -44,6 +79,7 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 		return
 	}
 
+	// #nosec G704 -- isValidURL requires HTTPS and the client's dialer resolves once and rejects every non-public address.
 	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
@@ -51,13 +87,13 @@ func sendWebhook(targetURL string, payload WebhookPayload) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	// #nosec G704 -- safeDialContext dials only the already-validated public resolution and redirects are disabled.
+	resp, err := webhookClient.Do(req)
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		log.Printf("Webhook returned error status: %d", resp.StatusCode)
@@ -75,14 +111,13 @@ func NotifySlack(webhookURL string, msg string) {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := webhookClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 		}
 	}()
 }
@@ -98,14 +133,13 @@ func NotifyDiscord(webhookURL string, msg string) {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := webhookClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 		}
 	}()
 }
@@ -127,21 +161,20 @@ func NotifyTeams(webhookURL string, title, text string) {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := webhookClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 		}
 	}()
 }
 
 func isValidURL(u string) bool {
 	p, err := url.Parse(u)
-	if err != nil || (p.Scheme != "http" && p.Scheme != "https") {
+	if err != nil || p.Scheme != "https" || p.Host == "" || p.User != nil {
 		return false
 	}
 

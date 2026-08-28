@@ -16,11 +16,7 @@ func TestDefaultStateFileUnix(t *testing.T) {
 }
 
 func TestStatePermissionsUnix(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-perm-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	// Use a nested subdirectory to ensure MkdirAll creates it
