@@ -16,11 +16,15 @@ func CheckDiskSpace(path string, minBytes uint64) error {
 		return fmt.Errorf("failed to check disk space: %v", err)
 	}
 
+	if stat.Bsize <= 0 {
+		return fmt.Errorf("invalid filesystem block size: %d", stat.Bsize)
+	}
+	blockSize := uint64(stat.Bsize)
 	var available uint64
-	if stat.Bsize > 0 && stat.Bavail > math.MaxUint64/uint64(stat.Bsize) {
+	if stat.Bavail > math.MaxUint64/blockSize {
 		available = math.MaxUint64
 	} else {
-		available = stat.Bavail * uint64(stat.Bsize)
+		available = stat.Bavail * blockSize
 	}
 
 	if available < minBytes {
