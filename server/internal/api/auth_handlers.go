@@ -62,12 +62,14 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
+	if err := json.NewEncoder(&buf).Encode(pair); err != nil { // #nosec G117 -- Authenticated login/refresh must return the token pair to its client.
 		log.Printf("Error encoding login response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Response write failed: %v", err)
+	}
 }
 
 func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
@@ -119,10 +121,12 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(pair); err != nil {
+	if err := json.NewEncoder(&buf).Encode(pair); err != nil { // #nosec G117 -- Authenticated login/refresh must return the token pair to its client.
 		log.Printf("Error encoding refresh response: %v", err)
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Response write failed: %v", err)
+	}
 }

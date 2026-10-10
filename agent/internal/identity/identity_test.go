@@ -14,11 +14,7 @@ func TestGetOrGenerate(t *testing.T) {
 	defer func() { idFile = originalIdFile }()
 
 	t.Run("generate new ID when file doesn't exist", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		idFile = filepath.Join(tmpDir, "node_id")
 
@@ -41,11 +37,7 @@ func TestGetOrGenerate(t *testing.T) {
 	})
 
 	t.Run("load existing valid ID", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		idFile = filepath.Join(tmpDir, "node_id")
 		expectedID := uuid.New().String()
@@ -63,11 +55,7 @@ func TestGetOrGenerate(t *testing.T) {
 	})
 
 	t.Run("generate new ID when file content is invalid", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		idFile = filepath.Join(tmpDir, "node_id")
 		if err := os.WriteFile(idFile, []byte("invalid-uuid"), 0600); err != nil {

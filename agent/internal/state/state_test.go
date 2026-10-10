@@ -8,11 +8,7 @@ import (
 
 func TestState(t *testing.T) {
 	// Create a temporary state file for testing
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -59,11 +55,7 @@ func TestState(t *testing.T) {
 }
 
 func TestClearStateIdempotent(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -81,18 +73,14 @@ func TestClearStateIdempotent(t *testing.T) {
 }
 
 func TestLoadStateInvalidJSON(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "invalid.json")
 	defer func() { stateFile = oldStateFile }()
 
 	_ = os.WriteFile(stateFile, []byte("{invalid"), 0644)
-	_, err = LoadState()
+	_, err := LoadState()
 	if err == nil {
 		t.Error("LoadState should have failed for invalid JSON")
 	}
@@ -113,11 +101,7 @@ func TestSaveStateError(t *testing.T) {
 }
 
 func TestLoadStateError(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -128,7 +112,7 @@ func TestLoadStateError(t *testing.T) {
 		t.Fatalf("Failed to write invalid json: %v", err)
 	}
 
-	_, err = LoadState()
+	_, err := LoadState()
 	if err == nil {
 		t.Error("LoadState should have failed for invalid JSON")
 	}

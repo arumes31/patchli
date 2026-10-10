@@ -96,8 +96,14 @@ sequenceDiagram
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `SERVER_URL` | Host and port of the Patchli Control Plane | `localhost:8080` |
+| `SERVER_URL` | Control-plane URL, optionally including a path prefix; remote hosts require HTTPS with a certificate trusted by the system | `localhost:8080` |
 | `TRUSTED_PUB_KEY` | Ed25519 public key (Base64) to verify downloaded binaries during self-update | - |
+
+Bare remote host names use HTTPS; the agent uses WSS for the corresponding
+WebSocket connection. Explicit HTTP is accepted only for loopback development
+controllers. Remote deployments previously using plain HTTP must configure TLS
+before updating the agent. Redirects are rejected so credentials and update
+requests cannot be forwarded to another endpoint.
 
 ---
 
@@ -129,7 +135,7 @@ Navigate to `http://localhost:8080/` and log in.
 cd server && go run ./cmd/patchli-server/main.go
 
 # Run agent
-cd agent && go run ./cmd/patchli-agent/main.go
+cd agent && go run ./cmd/patchli-agent
 ```
 
 ### Testing & Quality

@@ -55,7 +55,7 @@ func init() {
 
 func GenerateRegistrationSignature(group string, timestamp string) string {
 	h := hmac.New(sha256.New, registrationSecret)
-	h.Write([]byte(fmt.Sprintf("%s:%s", group, timestamp)))
+	_, _ = fmt.Fprintf(h, "%s:%s", group, timestamp) // hash.Hash.Write never returns an error.
 	return hex.EncodeToString(h.Sum(nil))
 }
 

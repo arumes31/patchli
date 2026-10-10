@@ -69,6 +69,17 @@ func TestCheckDiskSpace_Unix(t *testing.T) {
 		}
 	})
 
+	t.Run("negative block size", func(t *testing.T) {
+		syscallStatfs = func(path string, stat *syscall.Statfs_t) error {
+			stat.Bsize = -1
+			stat.Bavail = 1
+			return nil
+		}
+		if err := CheckDiskSpace("/some/path", 1); err == nil {
+			t.Fatal("negative block size incorrectly reported sufficient disk space")
+		}
+	})
+
 	t.Run("zero bsize", func(t *testing.T) {
 		syscallStatfs = func(path string, stat *syscall.Statfs_t) error {
 			stat.Bsize = 0

@@ -55,7 +55,9 @@ func HandleNodes(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Response write failed: %v", err)
+	}
 }
 
 func HandleStats(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +94,9 @@ func HandleStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return
 	}
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("Response write failed: %v", err)
+	}
 }
 
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +144,9 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
-	fmt.Fprint(w, script)
+	if _, err := fmt.Fprint(w, script); err != nil {
+		log.Printf("Setup response write failed: %v", err)
+	}
 }
 
 func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
@@ -163,7 +169,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	}
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
-		log.Printf("Invalid BaseURL rejected: %q", baseURL)
+		log.Printf("Invalid BaseURL rejected: %q", baseURL) // #nosec G706 -- %q escapes control characters.
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}
@@ -270,7 +276,9 @@ func HandleStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	fmt.Fprintf(w, "data: %s\n\n", `{"message": "System stream initialized", "level": "system"}`)
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", `{"message": "System stream initialized", "level": "system"}`); err != nil {
+		return
+	}
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
 	} else {

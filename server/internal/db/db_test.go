@@ -12,7 +12,7 @@ func TestUpdateNodeStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Backup original DB and restore after test
 	oldDB := DB
@@ -67,7 +67,7 @@ func TestIsJobRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	oldDB := DB
 	DB = db
