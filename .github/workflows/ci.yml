@@ -15,20 +15,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
           cache: true
       
       - name: golangci-lint (Server)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: latest
+          version: v2.14.0
           working-directory: server
           args: --timeout=5m
 
       - name: golangci-lint (Agent)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: latest
+          version: v2.14.0
           working-directory: agent
           args: --timeout=5m
 
@@ -40,11 +40,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
 
       - name: Install Tools
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@7b1b5cebe007d62fb58eacb90fc571112939ec30
           go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run Gosec (Server)
@@ -71,7 +71,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
 
       - name: Test Server with Coverage
         run: |
@@ -108,7 +108,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       
       - name: Install Pumba (Chaos tool)
         run: |
@@ -171,7 +171,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       
       - name: Fuzz WebSocket Parser
         run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
@@ -185,7 +185,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       
       - name: Run Tests with Deadlock Detector
         run: go test -v -race ./...
