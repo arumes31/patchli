@@ -25,6 +25,7 @@ func init() {
 }
 
 func GetOrGenerate() (string, error) {
+	// #nosec G304 -- Fixed local identity path initialized from the service administrator environment, not network input.
 	if data, err := os.ReadFile(idFile); err == nil && len(data) > 0 {
 		parsed := strings.TrimSpace(string(data))
 		if _, err := uuid.Parse(parsed); err == nil {

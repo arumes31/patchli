@@ -15,20 +15,20 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
           cache: true
       
       - name: golangci-lint (Server)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: latest
+          version: v2.14.0
           working-directory: server
           args: --timeout=5m
 
       - name: golangci-lint (Agent)
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v9.3.0
         with:
-          version: latest
+          version: v2.14.0
           working-directory: agent
           args: --timeout=5m
 
@@ -40,11 +40,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
 
       - name: Install Tools
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@7b1b5cebe007d62fb58eacb90fc571112939ec30
           go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run Gosec (Server)
@@ -71,7 +71,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
 
       - name: Test Server with Coverage
         run: |
@@ -91,10 +91,6 @@ jobs:
     name: Chaos Engineering Tests
     runs-on: ubuntu-latest
     services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
       postgres:
         image: postgres:15-alpine
         env:
@@ -103,18 +99,21 @@ jobs:
           POSTGRES_DB: patchli
         ports:
           - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d patchli"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       
-      - name: Install Pumba (Chaos tool)
-        run: |
-          curl -sL https://github.com/alexei-led/pumba/releases/download/0.9.0/pumba_linux_amd64 -o pumba
-          chmod +x pumba
-          sudo mv pumba /usr/local/bin/
+      - name: Verify database migrations and data preservation
+        run: go test -tags integration ./internal/db -run TestMigrations -count=1
+        working-directory: server
+        env:
+          PATCHLI_MIGRATION_TEST_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
 
       - name: Build Server
         run: go build -o server_bin ./cmd/patchli-server/main.go
@@ -140,21 +139,26 @@ jobs:
           done
         env:
           DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
-          REDIS_URL: localhost:6379
-          JWT_SECRET: "$(openssl rand -base64 32)"
+          JWT_SECRET: "ci-only-jwt-secret-not-used-in-production"
+          REGISTRATION_SECRET: "ci-only-registration-secret-not-used-in-production"
 
-      - name: Chaos Test - Kill Redis
+      - name: Chaos Test - PostgreSQL outage and recovery
         run: |
-          docker stop ${{ job.services.redis.id }} || true
-          sleep 2
+          docker stop ${{ job.services.postgres.id }}
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
-          if [ "$STATUS" -lt 500 ]; then
-            echo "Expected degraded (5xx) but got $STATUS"
+          if [ "$STATUS" != 503 ]; then
+            echo "Expected unavailable (503) but got $STATUS"
             exit 1
           fi
-          docker start ${{ job.services.redis.id }} || true
-          sleep 2
-          curl -f http://localhost:8080/health || exit 1
+          docker start ${{ job.services.postgres.id }}
+          for attempt in {1..15}; do
+            if curl -fsS http://localhost:8080/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server did not recover after PostgreSQL restart"
+          exit 1
 
       - name: Cleanup Server Process
         if: always()
@@ -171,7 +175,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       
       - name: Fuzz WebSocket Parser
         run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
@@ -185,7 +189,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.26.9'
       
       - name: Run Tests with Deadlock Detector
         run: go test -v -race ./...

@@ -13,7 +13,7 @@ type PacmanManager struct{}
 
 func (m *PacmanManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 	cmd := execCommandContext(ctx, "pacman", "-Sy")
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -42,7 +42,7 @@ func (m *PacmanManager) ApplyUpdates(ctx context.Context, packages []string) (Up
 	}
 
 	cmd := execCommandContext(ctx, "pacman", args...)
-	
+
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -58,7 +58,7 @@ func (m *PacmanManager) RebootRequired() bool {
 		if _, err := statFunc(fmt.Sprintf("/usr/lib/modules/%s", runningKernel)); os.IsNotExist(err) {
 			return true
 		}
-		
+
 		pacmanOut, err := execCommand("pacman", "-Q", "linux").Output()
 		if err == nil {
 			// output is generally "linux 6.4.12.arch1-1"
@@ -66,7 +66,7 @@ func (m *PacmanManager) RebootRequired() bool {
 			parts := strings.Split(installedStr, " ")
 			if len(parts) >= 2 {
 				installedKernel := parts[1]
-				
+
 				extractVersion := func(v string) string {
 					f := func(c rune) bool {
 						return c < '0' || c > '9'
@@ -77,22 +77,22 @@ func (m *PacmanManager) RebootRequired() bool {
 					}
 					return strings.Join(p, ".")
 				}
-				
+
 				normRunning := extractVersion(runningKernel)
 				normInstalled := extractVersion(installedKernel)
-				
+
 				if normRunning != "" && normInstalled != "" && normRunning != normInstalled {
 					return true
 				}
 			}
 		}
 	}
-	
+
 	out, err := execCommand("needrestart", "-b", "-r", "l").Output()
 	if err == nil && strings.Contains(string(out), "NEEDRESTART-KSTA: 3") {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -110,4 +110,3 @@ func (m *PacmanManager) PreFlightCheck(ctx context.Context) error {
 func (m *PacmanManager) Cleanup(ctx context.Context) error {
 	return execCommandContext(ctx, "pacman", "-Sc", "--noconfirm").Run()
 }
-

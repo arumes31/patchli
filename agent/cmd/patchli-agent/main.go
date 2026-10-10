@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,12 +28,25 @@ import (
 // On Windows it uses cmd.exe /c, on Unix it uses sh -c.
 func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
 	if runtime.GOOS == "windows" {
+		// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
 		return exec.CommandContext(ctx, "cmd.exe", "/c", script)
 	}
+	// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
 	return exec.CommandContext(ctx, "sh", "-c", script)
 }
 
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
+
+// Keep service-owned storage and destructive host operations behind injectable
+// boundaries so command tests never depend on or modify the host installation.
+var (
+	getIdentityFunc  = identity.GetOrGenerate
+	loadStateFunc    = state.LoadState
+	loadTokensFunc   = loadTokens
+	saveStateFunc    = state.SaveState
+	clearStateFunc   = state.ClearState
+	selfDestructFunc = updater.SelfDestruct
+)
 
 // Message types matching server
 const (
@@ -88,7 +100,7 @@ func performSelfDiagnosis() {
 	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
 
 	fmt.Print("1. Identity check: ")
-	nodeID, err := identity.GetOrGenerate()
+	nodeID, err := getIdentityFunc()
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
@@ -115,7 +127,13 @@ func performSelfDiagnosis() {
 	if serverURL == "" {
 		serverURL = "localhost:8080"
 	}
-	resp, err := http.Get("http://" + serverURL + "/health")
+	req, err := controllerRequest(context.Background(), "GET", serverURL, "/health", nil)
+	if err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+		return
+	}
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
+	resp, err := controllerClient(30 * time.Second).Do(req)
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
@@ -138,15 +156,12 @@ func getTokenFile() string {
 }
 
 func saveTokens(pair TokenPair) error {
+	// #nosec G117 -- Intentional credential persistence, written only to an owner-restricted file by writeTokens.
 	data, err := json.Marshal(pair)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(getTokenFile())
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-	return os.WriteFile(getTokenFile(), data, 0600)
+	return writeTokens(getTokenFile(), data)
 }
 
 func loadTokens() (*TokenPair, error) {
@@ -167,18 +182,19 @@ func refreshTokens(ctx context.Context, serverURL, nodeID string, refreshToken s
 		"refresh_token": refreshToken,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
+	req, err := controllerRequest(ctx, "POST", serverURL, "/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create refresh request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := controllerClient(30 * time.Second)
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("refresh failed: %d", resp.StatusCode)
@@ -212,14 +228,14 @@ func RunAgent(ctx context.Context) {
 		log.Fatalf("Failed to detect package manager: %v", err)
 	}
 
-	nodeID, err := identity.GetOrGenerate()
+	nodeID, err := getIdentityFunc()
 	if err != nil {
 		log.Fatalf("Failed to get agent identity: %v", err)
 	}
 	log.Printf("Agent Identity (UUID): %s", nodeID)
 
 	// State Recovery on Boot
-	lastState, _ := state.LoadState()
+	lastState, _ := loadStateFunc()
 	if lastState != nil && lastState.Status == "running" {
 		log.Printf("RECOVERY: Detected interrupted job %s. Reporting to server...", lastState.JobID)
 	}
@@ -231,7 +247,7 @@ func RunAgent(ctx context.Context) {
 
 	// Auth: load existing tokens
 	var tokens *TokenPair
-	tokens, _ = loadTokens()
+	tokens, _ = loadTokensFunc()
 
 	if tokens == nil {
 		log.Println("No tokens found. Agent requires initial registration.")
@@ -244,12 +260,21 @@ func RunAgent(ctx context.Context) {
 			return fmt.Errorf("no tokens available")
 		}
 
-		u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
+		u, err := controllerEndpoint(serverURL, "/ws")
+		if err != nil {
+			return err
+		}
+		if u.Scheme == "https" {
+			u.Scheme = "wss"
+		} else {
+			u.Scheme = "ws"
+		}
 		header := http.Header{}
 		header.Set("Authorization", "Bearer "+tokens.AccessToken)
 
-		log.Printf("Connecting to %s", u.String())
-		conn, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
+		// #nosec G706 -- %q escapes newlines and other control characters.
+		log.Printf("Connecting to %q", u.String())
+		conn, resp, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
 		if err != nil {
 			if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 				log.Println("Unauthorized. Attempting token refresh...")
@@ -264,7 +289,7 @@ func RunAgent(ctx context.Context) {
 			startHTTPPolling(ctx, serverURL, nodeID, pm, tokens)
 			return err
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		go runHeartbeat(ctx, conn, nodeID, pm)
 
@@ -345,7 +370,7 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater.PackageManager, tokens *TokenPair) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := controllerClient(60 * time.Second)
 
 	for {
 		hostname, _ := os.Hostname()
@@ -359,7 +384,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 		}
 		data, _ := json.Marshal(hb)
 
-		req, err := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
+		req, err := controllerRequest(ctx, "POST", serverHost, "/api/v1/poll", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Failed to create poll request: %v", err)
 			select {
@@ -374,6 +399,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 			req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
 		}
 
+		// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("HTTP Poll error: %v", err)
@@ -427,7 +453,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 			}
 		}
 
-		if err := state.SaveState(state.State{
+		if err := saveStateFunc(state.State{
 			JobID:  cmd.ID,
 			Action: cmd.Action,
 			Status: "running",
@@ -435,7 +461,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 			log.Printf("Failed to save state: %v", err)
 		}
 		defer func() {
-			_ = state.ClearState()
+			_ = clearStateFunc()
 		}()
 	}
 
@@ -448,7 +474,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 		err = pm.Cleanup(ctx)
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "self_destruct":
-		err = updater.SelfDestruct()
+		err = selfDestructFunc()
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "update_agent":
 		log.Printf("Auto-updating agent...")
@@ -491,17 +517,18 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 	if serverURL == "" {
 		serverURL = "localhost:8080"
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://"+serverURL+"/download/agent", nil)
+	req, err := controllerRequest(ctx, "GET", serverURL, "/download/agent", nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
-	client := &http.Client{Timeout: 5 * time.Minute}
+	client := controllerClient(5 * time.Minute)
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
 	resp, err := client.Do(req)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during agent download", resp.StatusCode)}
@@ -525,7 +552,7 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 	}
 
 	// Download the signature file before verification
-	sigReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+serverURL+"/download/agent.sig", nil)
+	sigReq, err := controllerRequest(ctx, "GET", serverURL, "/download/agent.sig", nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to create signature download request: %v", err)}
 	}
@@ -533,7 +560,7 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to download signature: %v", err)}
 	}
-	defer sigResp.Body.Close()
+	defer func() { _ = sigResp.Body.Close() }()
 
 	if sigResp.StatusCode != http.StatusOK {
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during signature download", sigResp.StatusCode)}
@@ -569,6 +596,7 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("signature verification failed: %v", err)}
 	}
 
+	// #nosec G302 -- This is the Ed25519-verified executable; others may execute but cannot modify it.
 	if err := os.Chmod(tmpName, 0755); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
@@ -606,6 +634,7 @@ func verifySignature(filePath string) error {
 	}
 
 	sigPath := filePath + ".sig"
+	// #nosec G304 -- The signature path is derived from our generated update temporary file, never remote input.
 	sigBase64, err := os.ReadFile(sigPath)
 	if err != nil {
 		return fmt.Errorf("failed to read signature file %s: %v", sigPath, err)
@@ -616,6 +645,7 @@ func verifySignature(filePath string) error {
 		return fmt.Errorf("failed to decode signature: %v", err)
 	}
 
+	// #nosec G304 -- The binary path is our generated update temporary file; bytes must pass Ed25519 verification below.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to read binary: %v", err)
@@ -629,22 +659,7 @@ func verifySignature(filePath string) error {
 
 func restartAgent(ctx context.Context) ([]byte, error) {
 	if runtime.GOOS == "windows" {
-		scPath, err := exec.LookPath("sc.exe")
-		if err == nil {
-			helper := exec.Command("cmd.exe", "/c", "timeout /t 2 /nobreak >nul && "+scPath+" start patchli-agent")
-			_ = helper.Start()
-			_ = exec.CommandContext(ctx, scPath, "stop", "patchli-agent").Run()
-			return []byte("Restarting via sc.exe helper"), nil
-		}
-
-		psPath, err := exec.LookPath("powershell.exe")
-		if err != nil {
-			return nil, fmt.Errorf("failed to find powershell.exe or sc.exe: %v", err)
-		}
-		helper := exec.Command(psPath, "-Command", "Start-Sleep -Seconds 2; Start-Service -Name patchli-agent")
-		_ = helper.Start()
-		_ = exec.CommandContext(ctx, psPath, "-Command", "Stop-Service -Name patchli-agent").Run()
-		return []byte("Restarting via powershell.exe helper"), nil
+		return restartWindowsAgent()
 	}
 	if _, err := os.Stat("/run/openrc"); err == nil {
 		return exec.CommandContext(ctx, "rc-service", "patchli-agent", "restart").CombinedOutput()

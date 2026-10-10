@@ -86,7 +86,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Upgrade error: %v", err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var macAddr string
 	var lastOS string

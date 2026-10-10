@@ -148,7 +148,9 @@ func (wp *WorkerPool) processJob(job models.Job) {
 				defer timer.Stop()
 				select {
 				case <-timer.C:
-					wp.Submit(j)
+					if err := wp.Submit(j); err != nil {
+						log.Printf("Failed to requeue job %q: %v", j.ID, err)
+					}
 				case <-wp.stopChan:
 					log.Printf("Job %s cancelled: pool is stopping.", j.ID)
 				}

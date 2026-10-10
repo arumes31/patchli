@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +10,9 @@ import (
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
+	"github.com/arumes31/patchli/server/internal/fleet"
 	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )
 
@@ -33,7 +36,7 @@ func TestHandleWebSocket(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to connect to websocket: %v", err)
 		}
-		defer ws.Close()
+		defer func() { _ = ws.Close() }()
 
 		heartbeat := struct {
 			Type    string          `json:"type"`
@@ -59,7 +62,7 @@ func TestHandleWebSocket(t *testing.T) {
 	t.Run("Invalid JSON", func(t *testing.T) {
 		ws, _, _ := websocket.DefaultDialer.Dial(u, header)
 		if ws != nil {
-			defer ws.Close()
+			defer func() { _ = ws.Close() }()
 			_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid json"))
 			time.Sleep(50 * time.Millisecond)
 		}
@@ -77,7 +80,9 @@ func TestHandleWebSocket(t *testing.T) {
 			}
 			_ = ws.WriteJSON(heartbeat)
 			time.Sleep(50 * time.Millisecond)
-			ws.Close()
+			if err := ws.Close(); err != nil {
+				t.Fatal(err)
+			}
 			time.Sleep(50 * time.Millisecond)
 		}
 	})
@@ -109,4 +114,122 @@ func FuzzMessage(f *testing.F) {
 			// ...
 		}
 	})
+}
+
+func TestInitSecrets(t *testing.T) {
+	original := append([]byte(nil), jwtSecret...)
+	t.Cleanup(func() { jwtSecret = original })
+	for _, tc := range []struct {
+		name, secret  string
+		panicExpected bool
+	}{
+		{"missing", "", true}, {"short", "short", true}, {"valid", "0123456789abcdef", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("JWT_SECRET", tc.secret)
+			defer func() {
+				panicked := recover() != nil
+				if panicked != tc.panicExpected {
+					t.Errorf("panicked=%v want=%v", panicked, tc.panicExpected)
+				}
+			}()
+			InitSecrets()
+			if string(jwtSecret) != tc.secret {
+				t.Error("configured secret not loaded")
+			}
+		})
+	}
+}
+
+func TestOriginPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin, proto string
+		tls, want           bool
+	}{
+		{name: "agent without origin", want: true},
+		{name: "same host", origin: "http://controller.example", want: true},
+		{name: "foreign host", origin: "http://attacker.example", want: false},
+		{name: "direct TLS", origin: "https://controller.example", tls: true, want: true},
+		{name: "TLS scheme mismatch", origin: "http://controller.example", tls: true, want: false},
+		{name: "forwarded TLS", origin: "https://controller.example", proto: "HTTPS", want: true},
+		{name: "unsupported forwarded scheme", origin: "https://controller.example", proto: "ftp", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://controller.example/ws", nil)
+			req.Header.Set("Origin", tc.origin)
+			req.Header.Set("X-Forwarded-Proto", tc.proto)
+			if tc.tls {
+				req.TLS = &tls.ConnectionState{}
+			}
+			if got := upgrader.CheckOrigin(req); got != tc.want {
+				t.Errorf("accepted=%v want=%v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHandleWebSocketAuthentication(t *testing.T) {
+	unsigned, err := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.MapClaims{"sub": "node"}).SignedString(jwt.UnsafeAllowNoneSignatureType)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := auth.GenerateAgentJWT("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, header string
+		status       int
+		message      string
+	}{
+		{"missing header", "", http.StatusUnauthorized, "Invalid Header"},
+		{"wrong scheme", "Basic token", http.StatusUnauthorized, "Invalid Header"},
+		{"malformed token", "Bearer invalid", http.StatusUnauthorized, "Invalid Token"},
+		{"unsigned claims", "Bearer " + unsigned, http.StatusUnauthorized, "Invalid Token"},
+		{"missing websocket handshake", "Bearer " + valid, http.StatusBadRequest, "Bad Request"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "http://controller.example/ws", nil)
+			req.Header.Set("Authorization", tc.header)
+			rr := httptest.NewRecorder()
+			HandleWebSocket(rr, req)
+			if rr.Code != tc.status || !strings.Contains(strings.ToLower(rr.Body.String()), strings.ToLower(tc.message)) {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+		})
+	}
+}
+
+func TestHandleWebSocketIgnoresMalformedHeartbeat(t *testing.T) {
+	before := len(fleet.Registry.GetNodes())
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { defer close(done); HandleWebSocket(w, r) }))
+	defer server.Close()
+	token, err := auth.GenerateAgentJWT("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"Authorization": []string{"Bearer " + token}}
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), header)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"heartbeat","payload":"wrong shape"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"), time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+		if got := len(fleet.Registry.GetNodes()); got != before {
+			t.Fatalf("malformed heartbeat changed node count: got %d want %d", got, before)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("handler did not process malformed message and close")
+	}
 }

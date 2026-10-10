@@ -38,10 +38,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Health check
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("OK"))
-	})
+	mux.HandleFunc("/health", handleHealth)
 
 	// Use embedded FS for static files
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.FS))))
@@ -86,7 +83,7 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Server listening on :%s", port)
+		log.Printf("Server listening on port %q", port) // #nosec G706 -- %q escapes control characters.
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
@@ -110,4 +107,17 @@ func main() {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 	log.Println("Server stopped")
+}
+
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	if db.DB != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		if err := db.DB.PingContext(ctx); err != nil {
+			http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("OK"))
 }
