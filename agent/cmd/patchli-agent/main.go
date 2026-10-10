@@ -37,6 +37,17 @@ func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
 
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
 
+// Keep service-owned storage and destructive host operations behind injectable
+// boundaries so command tests never depend on or modify the host installation.
+var (
+	getIdentityFunc  = identity.GetOrGenerate
+	loadStateFunc    = state.LoadState
+	loadTokensFunc   = loadTokens
+	saveStateFunc    = state.SaveState
+	clearStateFunc   = state.ClearState
+	selfDestructFunc = updater.SelfDestruct
+)
+
 // Message types matching server
 const (
 	MsgTypeHeartbeat = "heartbeat"
@@ -89,7 +100,7 @@ func performSelfDiagnosis() {
 	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
 
 	fmt.Print("1. Identity check: ")
-	nodeID, err := identity.GetOrGenerate()
+	nodeID, err := getIdentityFunc()
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
@@ -217,14 +228,14 @@ func RunAgent(ctx context.Context) {
 		log.Fatalf("Failed to detect package manager: %v", err)
 	}
 
-	nodeID, err := identity.GetOrGenerate()
+	nodeID, err := getIdentityFunc()
 	if err != nil {
 		log.Fatalf("Failed to get agent identity: %v", err)
 	}
 	log.Printf("Agent Identity (UUID): %s", nodeID)
 
 	// State Recovery on Boot
-	lastState, _ := state.LoadState()
+	lastState, _ := loadStateFunc()
 	if lastState != nil && lastState.Status == "running" {
 		log.Printf("RECOVERY: Detected interrupted job %s. Reporting to server...", lastState.JobID)
 	}
@@ -236,7 +247,7 @@ func RunAgent(ctx context.Context) {
 
 	// Auth: load existing tokens
 	var tokens *TokenPair
-	tokens, _ = loadTokens()
+	tokens, _ = loadTokensFunc()
 
 	if tokens == nil {
 		log.Println("No tokens found. Agent requires initial registration.")
@@ -442,7 +453,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 			}
 		}
 
-		if err := state.SaveState(state.State{
+		if err := saveStateFunc(state.State{
 			JobID:  cmd.ID,
 			Action: cmd.Action,
 			Status: "running",
@@ -450,7 +461,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 			log.Printf("Failed to save state: %v", err)
 		}
 		defer func() {
-			_ = state.ClearState()
+			_ = clearStateFunc()
 		}()
 	}
 
@@ -463,7 +474,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 		err = pm.Cleanup(ctx)
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "self_destruct":
-		err = updater.SelfDestruct()
+		err = selfDestructFunc()
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "update_agent":
 		log.Printf("Auto-updating agent...")

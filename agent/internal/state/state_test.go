@@ -79,7 +79,9 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 	stateFile = filepath.Join(tmpDir, "invalid.json")
 	defer func() { stateFile = oldStateFile }()
 
-	_ = os.WriteFile(stateFile, []byte("{invalid"), 0644)
+	if err := os.WriteFile(stateFile, []byte("{invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	_, err := LoadState()
 	if err == nil {
 		t.Error("LoadState should have failed for invalid JSON")
@@ -87,16 +89,22 @@ func TestLoadStateInvalidJSON(t *testing.T) {
 }
 
 func TestSaveStateError(t *testing.T) {
-	// Test SaveState with invalid path
-	oldStateFile := stateFile
-	// On Windows, a path with invalid characters
-	stateFile = "Z:\\invalid\\path\\?:|/state.json"
-	defer func() { stateFile = oldStateFile }()
-
-	state := State{JobID: "test"}
-	err := SaveState(state)
-	if err == nil {
-		t.Error("SaveState should have failed for invalid path")
+	parent := filepath.Join(t.TempDir(), "file-not-directory")
+	if err := os.WriteFile(parent, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	previous := stateFile
+	stateFile = filepath.Join(parent, "state.json")
+	t.Cleanup(func() { stateFile = previous })
+	if err := SaveState(State{JobID: "test"}); err == nil {
+		t.Fatal("SaveState accepted a regular file as its parent directory")
+	}
+	data, err := os.ReadFile(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "fixture" {
+		t.Fatal("failed save modified the parent fixture")
 	}
 }
 

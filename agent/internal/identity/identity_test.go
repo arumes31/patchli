@@ -83,3 +83,30 @@ func TestGetOrGenerate(t *testing.T) {
 		}
 	})
 }
+
+func TestGetOrGenerateIdentityPersists(t *testing.T) {
+	previous := idFile
+	idFile = filepath.Join(t.TempDir(), "node_id")
+	t.Cleanup(func() { idFile = previous })
+	first, err := GetOrGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := uuid.Parse(first); err != nil {
+		t.Fatalf("invalid generated identity: %v", err)
+	}
+	persisted, err := os.ReadFile(idFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(persisted) != first {
+		t.Fatal("generated identity was not persisted")
+	}
+	second, err := GetOrGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("identity changed across reload: %q -> %q", first, second)
+	}
+}
