@@ -1,0 +1,3 @@
+## 2025-02-13 - [Avoid O(N) Slice Allocation when Computing Aggregates]
+**Learning:** `GetNodes()` in `AgentManager` was allocating and copying the entire map of agents into a slice just to allow `HandleStats` to iterate over them and calculate aggregate counts (`online`, `rebootRequired`). This incurs O(N) memory allocation and copy overhead per request.
+**Action:** When computing aggregates over internal data structures like maps, implement dedicated statistical methods (e.g., `GetStats()`) that acquire the lock and perform the computation directly against the map, returning primitive values instead of copying the entire structure.
