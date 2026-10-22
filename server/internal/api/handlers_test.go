@@ -150,7 +150,7 @@ func TestHandleSetup(t *testing.T) {
 		{
 			name:           "Linux default",
 			query:          "group=prod&os=linux",
-			expectedInBody: []string{"GROUP='prod'", "#!/bin/bash", "SERVER_URL="},
+			expectedInBody: []string{"GROUP='prod'", "#!/bin/bash", "SERVER_URL=", "NONCE='"},
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -201,10 +201,7 @@ func TestHandleSetup(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			req, err := http.NewRequest("GET", "/api/v1/setup?"+tt.query, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			req := httptest.NewRequest("GET", "/api/v1/setup?"+tt.query, nil)
 
 			if tt.useTLS {
 				req.TLS = &tls.ConnectionState{}
@@ -243,10 +240,7 @@ func TestServeSetupUI(t *testing.T) {
 	setupHandlers(t)
 
 	t.Run("Default", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 
 		rr := httptest.NewRecorder()
 		ServeSetupUI(rr, req)
@@ -263,10 +257,7 @@ func TestServeSetupUI(t *testing.T) {
 	t.Run("With BASE_URL", func(t *testing.T) {
 		t.Setenv("BASE_URL", "http://custom.base.url")
 
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 
 		rr := httptest.NewRecorder()
 		ServeSetupUI(rr, req)
@@ -277,10 +268,7 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With X-Forwarded-Proto", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 		req.Header.Set("X-Forwarded-Proto", "https")
 
 		rr := httptest.NewRecorder()
@@ -292,10 +280,7 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With TLS", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 		req.TLS = &tls.ConnectionState{}
 
 		rr := httptest.NewRecorder()
@@ -368,12 +353,16 @@ func TestSetupURLTrust(t *testing.T) {
 		{"trusted unsupported protocol", "", "192.0.2.1", "192.0.2.1:1234", "ftp", "http://controller.example", http.StatusOK},
 		{"invalid scheme", "javascript:alert(1)", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
 		{"malformed url", "http://%", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
+		{"injected host header", "", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("BASE_URL", tc.base)
 			t.Setenv("TRUSTED_PROXY", tc.proxy)
 			rr := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, "http://controller.example/setup", nil)
+			if tc.name == "injected host header" {
+				req.Host = `evil.example/"><script>alert(1)</script>`
+			}
 			req.RemoteAddr = tc.remote
 			req.Header.Set("X-Forwarded-Proto", tc.proto)
 			ServeSetupUI(rr, req)

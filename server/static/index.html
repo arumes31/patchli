@@ -300,6 +300,13 @@
             }
         }
 
+        // Node fields are reported by agents and must never be inserted as raw HTML.
+        function escapeHTML(value) {
+            return String(value).replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
         function renderNodes() {
             if (!nodesData || nodesData.length === 0) {
                 nodeTableBody.innerHTML = `<tr><td colspan="5" class="text-center opacity-40 py-8">No nodes detected. Waiting for heartbeats...</td></tr>`;
@@ -335,7 +342,7 @@
             const newRowOrder = [];
 
             sorted.forEach(node => {
-                const rowId = `node-${node.hostname.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                const rowId = `node-${String(node.hostname || '').replace(/[^a-zA-Z0-9]/g, '-')}`;
                 let tr = existingRows.get(rowId);
                 const isOffline = (new Date() - new Date(node.last_heartbeat)) > 60000; // 1 min threshold
                 const statusClass = isOffline ? 'offline' : '';
@@ -344,11 +351,11 @@
                 const timeAgoStr = timeAgo(node.last_heartbeat);
                 
                 const htmlContent = `
-                    <td class="font-bold text-teal-200">${node.hostname}</td>
-                    <td><span class="status-badge ${statusClass}"><span class="pulse-dot ${statusClass}"></span> ${displayStatus}</span></td>
-                    <td>${node.os || 'Unknown'}</td>
-                    <td class="opacity-60 text-xs">${node.kernel || 'N/A'}</td>
-                    <td class="text-teal-400/60 italic text-xs">${timeAgoStr}</td>
+                    <td class="font-bold text-teal-200">${escapeHTML(node.hostname || '')}</td>
+                    <td><span class="status-badge ${statusClass}"><span class="pulse-dot ${statusClass}"></span> ${escapeHTML(displayStatus)}</span></td>
+                    <td>${escapeHTML(node.os || 'Unknown')}</td>
+                    <td class="opacity-60 text-xs">${escapeHTML(node.kernel || 'N/A')}</td>
+                    <td class="text-teal-400/60 italic text-xs">${escapeHTML(timeAgoStr)}</td>
                 `;
 
                 if (!tr) {
