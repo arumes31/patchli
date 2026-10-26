@@ -1,7 +1,10 @@
 package fleet
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"errors"
+	"github.com/arumes31/patchli/server/internal/cmdsign"
 	"github.com/arumes31/patchli/server/internal/models"
 	"github.com/gorilla/websocket"
 	"net"
@@ -128,5 +131,62 @@ func TestPruneRemovesOnlyStaleAndInvalidHeartbeats(t *testing.T) {
 	manager.Reset()
 	if len(manager.GetNodes()) != 0 {
 		t.Fatal("reset did not clear nodes")
+	}
+}
+
+func TestUnregisterConnIgnoresReplacedConnection(t *testing.T) {
+	manager := &AgentManager{}
+	manager.Reset()
+	first, _ := socketPair(t)
+	second, _ := socketPair(t)
+	manager.Register("node", first, models.HeartbeatPayload{Hostname: "host"})
+	// Re-registering the same connection (a later heartbeat) must keep it open.
+	manager.Register("node", first, models.HeartbeatPayload{Hostname: "host"})
+	if err := manager.SendCommand("node", models.CommandPayload{ID: "job"}); err != nil {
+		t.Fatalf("heartbeat closed its own connection: %v", err)
+	}
+	manager.Register("node", second, models.HeartbeatPayload{Hostname: "host"})
+	if manager.UnregisterConn("node", first) {
+		t.Fatal("replaced connection evicted its successor")
+	}
+	if manager.GetNodes()[0].Status != "Online" {
+		t.Fatal("successor marked offline")
+	}
+	if !manager.UnregisterConn("node", second) {
+		t.Fatal("current connection not unregistered")
+	}
+	if manager.GetNodes()[0].Status != "offline" {
+		t.Fatal("unregister did not mark offline")
+	}
+	if manager.UnregisterConn("node", second) {
+		t.Fatal("unregistered twice")
+	}
+}
+
+func TestSendCommandSignsWhenKeyConfigured(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmdsign.SetKey(priv)
+	t.Cleanup(func() { cmdsign.SetKey(nil) })
+	manager := &AgentManager{}
+	manager.Reset()
+	peer, client := socketPair(t)
+	manager.Register("node", peer, models.HeartbeatPayload{Hostname: "host"})
+	if err := manager.SendCommand("node", models.CommandPayload{ID: "job", Action: "check_updates"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	var message struct {
+		Payload models.CommandPayload `json:"payload"`
+	}
+	if err := client.ReadJSON(&message); err != nil {
+		t.Fatal(err)
+	}
+	if message.Payload.NodeID != "node" || message.Payload.Signature == "" || message.Payload.ExpiresAt == 0 {
+		t.Fatalf("command not signed: %+v", message.Payload)
 	}
 }

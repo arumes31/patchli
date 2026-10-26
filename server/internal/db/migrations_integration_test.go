@@ -118,7 +118,7 @@ INSERT INTO audit_logs (id,node_id,action,status,output,created_at) VALUES
 					t.Fatalf("node UUID %q err=%v", uuid, err)
 				}
 			}
-			if err := m.Steps(-3); err != nil {
+			if err := m.Migrate(1); err != nil {
 				t.Fatal(err)
 			}
 			var retained int
@@ -176,7 +176,7 @@ CREATE TRIGGER audit_logs_partition_trigger BEFORE INSERT ON audit_logs FOR EACH
 	if err := conn.QueryRow(`SELECT count(*) FROM audit_logs WHERE id=100 AND output='existing partition'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("existing partition data count=%d err=%v", count, err)
 	}
-	if err := m.Steps(-1); err != nil {
+	if err := m.Migrate(3); err != nil {
 		t.Fatal(err)
 	}
 	if err := conn.QueryRow(`SELECT count(*) FROM audit_logs`).Scan(&count); err != nil || count != 3 {

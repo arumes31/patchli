@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -20,6 +21,14 @@ var (
 const (
 	AccessTokenDuration  = time.Hour * 1
 	RefreshTokenDuration = time.Hour * 24 * 7
+
+	// TokenAudience is the "aud" claim carried by every agent token.
+	TokenAudience = "patchli-agent"
+	// TokenTypeAccess and TokenTypeRefresh are the values of the "typ" claim.
+	// Validators enforce them so a refresh token cannot be used as an access
+	// token (and vice versa).
+	TokenTypeAccess  = "access"
+	TokenTypeRefresh = "refresh"
 )
 
 type TokenPair struct {
@@ -53,19 +62,42 @@ func init() {
 	}
 }
 
-func GenerateRegistrationSignature(group string, timestamp string) string {
+// GenerateRegistrationSignature signs the registration material. The nonce is
+// generated server-side per setup script and can only be redeemed once (see
+// db.ConsumeRegistrationNonce), so a leaked script cannot be replayed to mint
+// tokens for arbitrary node IDs.
+func GenerateRegistrationSignature(group, timestamp, nonce string) string {
 	h := hmac.New(sha256.New, registrationSecret)
-	_, _ = fmt.Fprintf(h, "%s:%s", group, timestamp) // hash.Hash.Write never returns an error.
+	_, _ = fmt.Fprintf(h, "%s:%s:%s", group, timestamp, nonce) // hash.Hash.Write never returns an error.
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func GenerateAgentJWT(macAddr string) (string, error) {
+// NewRegistrationNonce returns a random single-use registration nonce.
+func NewRegistrationNonce() string {
+	return randomHex(16)
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b) // crypto/rand.Read never returns an error.
+	return hex.EncodeToString(b)
+}
+
+func signAgentToken(macAddr, tokenType string, lifetime time.Duration) (string, error) {
+	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": macAddr,
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(AccessTokenDuration).Unix(),
+		"aud": TokenAudience,
+		"typ": tokenType,
+		"jti": randomHex(16),
+		"iat": now.Unix(),
+		"exp": now.Add(lifetime).Unix(),
 	})
 	return token.SignedString(jwtSecret)
+}
+
+func GenerateAgentJWT(macAddr string) (string, error) {
+	return signAgentToken(macAddr, TokenTypeAccess, AccessTokenDuration)
 }
 
 func GenerateTokenPair(macAddr string) (*TokenPair, error) {
@@ -74,12 +106,7 @@ func GenerateTokenPair(macAddr string) (*TokenPair, error) {
 		return nil, err
 	}
 
-	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub": macAddr,
-		"iat": time.Now().Unix(),
-		"exp": time.Now().Add(RefreshTokenDuration).Unix(),
-	})
-	refreshStr, err := refreshToken.SignedString(jwtSecret)
+	refreshStr, err := signAgentToken(macAddr, TokenTypeRefresh, RefreshTokenDuration)
 	if err != nil {
 		return nil, err
 	}
@@ -109,13 +136,55 @@ func ValidateToken(tokenStr string) (*jwt.MapClaims, error) {
 	return nil, errors.New("invalid token")
 }
 
-func ValidateRegistration(group, timestamp, signature string) bool {
+// ValidateAccessToken validates an agent access token: signature, expiry,
+// audience and token type.
+func ValidateAccessToken(tokenStr string) (*jwt.MapClaims, error) {
+	claims, err := ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	if (*claims)["typ"] != TokenTypeAccess || !hasAudience(*claims) {
+		return nil, errors.New("not an access token")
+	}
+	return claims, nil
+}
+
+// ValidateRefreshToken validates an agent refresh token. Tokens issued before
+// the typ/aud claims were introduced carry neither claim; they are still
+// accepted here because refresh tokens are additionally checked against the
+// hashed copy stored in the database, which only ever holds refresh tokens.
+func ValidateRefreshToken(tokenStr string) (*jwt.MapClaims, error) {
+	claims, err := ValidateToken(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+	typ, hasType := (*claims)["typ"]
+	if hasType && (typ != TokenTypeRefresh || !hasAudience(*claims)) {
+		return nil, errors.New("not a refresh token")
+	}
+	return claims, nil
+}
+
+func hasAudience(claims jwt.MapClaims) bool {
+	aud, err := claims.GetAudience()
+	if err != nil {
+		return false
+	}
+	for _, a := range aud {
+		if a == TokenAudience {
+			return true
+		}
+	}
+	return false
+}
+
+func ValidateRegistration(group, timestamp, nonce, signature string) bool {
 	// Always perform both checks to avoid timing leaks
 	t, err := time.Parse(time.RFC3339, timestamp)
 	timestampValid := err == nil && time.Since(t) <= 10*time.Minute && time.Until(t) <= 5*time.Minute
 
-	expected := GenerateRegistrationSignature(group, timestamp)
+	expected := GenerateRegistrationSignature(group, timestamp, nonce)
 	signatureValid := hmac.Equal([]byte(signature), []byte(expected))
 
-	return timestampValid && signatureValid
+	return timestampValid && signatureValid && nonce != ""
 }
