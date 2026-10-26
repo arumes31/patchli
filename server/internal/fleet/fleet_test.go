@@ -29,8 +29,30 @@ func TestAgentManager(t *testing.T) {
 		}
 	})
 
+	t.Run("GetStats", func(t *testing.T) {
+		am.mu.Lock()
+		am.details = make(map[string]*models.AgentDetails)
+
+		am.details["mac1"] = &models.AgentDetails{Status: "Online"}
+		am.details["mac2"] = &models.AgentDetails{Status: "Reboot Required"}
+		am.details["mac3"] = &models.AgentDetails{Status: "Offline"}
+		am.mu.Unlock()
+
+		total, online, reboot := am.GetStats()
+		if total != 3 {
+			t.Errorf("Expected 3 total nodes, got %d", total)
+		}
+		if online != 1 {
+			t.Errorf("Expected 1 online node, got %d", online)
+		}
+		if reboot != 1 {
+			t.Errorf("Expected 1 reboot node, got %d", reboot)
+		}
+	})
+
 	t.Run("Add and GetNodes", func(t *testing.T) {
 		am.mu.Lock()
+		am.details = make(map[string]*models.AgentDetails)
 		am.details[mac] = details
 		am.mu.Unlock()
 
