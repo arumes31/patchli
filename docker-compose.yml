@@ -10,10 +10,16 @@ services:
     environment:
       # Required
       - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:?database password required}@postgres:5432/patchli?sslmode=disable
-      - REDIS_URL=${REDIS_URL:-redis:6379}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?redis password required}@redis:6379
       - JWT_SECRET=${JWT_SECRET:?JWT secret required}
       - REGISTRATION_SECRET=${REGISTRATION_SECRET:?registration secret required}
       # Optional
+      # Admin API bearer token (/api/v1/nodes, /api/v1/stats, /api/v1/setup).
+      # The admin API returns 401 while it is unset.
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+      # Base64 Ed25519 key used to sign agent commands (see README).
+      - COMMAND_SIGNING_KEY=${COMMAND_SIGNING_KEY:-}
+      - TRUSTED_PROXY=${TRUSTED_PROXY:-}
       - PORT=${PORT:-8080}
       - BASE_URL=${BASE_URL:-http://localhost:8080}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
@@ -35,6 +41,8 @@ services:
       - SERVER_URL=${SERVER_URL:-server:8080}
       # Optional
       - TRUSTED_PUB_KEY=${TRUSTED_PUB_KEY:-}
+      # Public key matching COMMAND_SIGNING_KEY; when set, unsigned commands are rejected.
+      - COMMAND_PUB_KEY=${COMMAND_PUB_KEY:-}
     depends_on:
       - server
     restart: unless-stopped
@@ -45,8 +53,9 @@ services:
 
   postgres:
     image: postgres:15-alpine
+    # Only reachable from the compose network and the local host.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?database password required}
@@ -57,6 +66,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?redis password required}", "--protected-mode", "yes"]
+    # Only reachable from the compose network and the local host.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
