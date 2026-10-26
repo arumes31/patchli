@@ -11,10 +11,14 @@ import (
 	"github.com/arumes31/patchli/server/internal/db"
 )
 
+// maxAuthBodyBytes caps login/refresh request bodies.
+const maxAuthBodyBytes = 64 << 10
+
 type LoginRequest struct {
 	MAC       string `json:"mac"`
 	Group     string `json:"group"`
 	Timestamp string `json:"timestamp"`
+	Nonce     string `json:"nonce"`
 	Signature string `json:"signature"`
 }
 
@@ -30,12 +34,13 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MAC == "" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if !auth.ValidateRegistration(req.Group, req.Timestamp, req.Signature) {
+	if !auth.ValidateRegistration(req.Group, req.Timestamp, req.Nonce, req.Signature) {
 		http.Error(w, "Invalid registration signature", http.StatusUnauthorized)
 		return
 	}
@@ -44,6 +49,31 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 	t, err := time.Parse(time.RFC3339, req.Timestamp)
 	if err != nil || time.Since(t) > 5*time.Minute || time.Until(t) > 5*time.Minute {
 		http.Error(w, "Stale or invalid timestamp", http.StatusUnauthorized)
+		return
+	}
+
+	// Never hand out tokens for a node ID that is already enrolled; otherwise
+	// a registration signature could be used to take over an existing node.
+	// A reinstalled node must wait for its old refresh token to expire or have
+	// it revoked by an operator.
+	enrolled, err := db.HasActiveRefreshToken(req.MAC)
+	if err != nil {
+		http.Error(w, "Failed to check enrollment", http.StatusInternalServerError)
+		return
+	}
+	if enrolled {
+		http.Error(w, "Node is already enrolled", http.StatusConflict)
+		return
+	}
+
+	// Each registration nonce can be redeemed exactly once.
+	fresh, err := db.ConsumeRegistrationNonce(req.Nonce, t.Add(10*time.Minute))
+	if err != nil {
+		http.Error(w, "Failed to record registration", http.StatusInternalServerError)
+		return
+	}
+	if !fresh {
+		http.Error(w, "Registration signature already used", http.StatusUnauthorized)
 		return
 	}
 
@@ -79,29 +109,35 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req RefreshRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Verify token in DB
-	valid, err := db.VerifyRefreshToken(req.MAC, req.RefreshToken)
-	if err != nil || !valid {
-		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
-		return
-	}
-
-	// Also validate JWT signature and claims
-	claims, err := auth.ValidateToken(req.RefreshToken)
+	// Validate JWT signature, type and subject first
+	claims, err := auth.ValidateRefreshToken(req.RefreshToken)
 	if err != nil || claims == nil || (*claims)["sub"] != req.MAC {
 		http.Error(w, "Invalid refresh token payload", http.StatusUnauthorized)
 		return
 	}
 
-	// Token rotation: delete old one
-	if err := db.DeleteRefreshToken(req.MAC, req.RefreshToken); err != nil {
-		log.Printf("Failed to delete old refresh token: %v", err)
+	// Token rotation: atomically consume the old token so it can be redeemed
+	// at most once.
+	consumed, err := db.ConsumeRefreshToken(req.MAC, req.RefreshToken)
+	if err != nil {
+		log.Printf("Failed to rotate refresh token: %v", err)
 		http.Error(w, "Failed to rotate refresh token", http.StatusInternalServerError)
+		return
+	}
+	if !consumed {
+		// A correctly signed, unexpired refresh token that is no longer stored
+		// has already been rotated: treat it as token theft and revoke every
+		// refresh token of the node.
+		if err := db.DeleteAllRefreshTokens(req.MAC); err != nil {
+			log.Printf("Failed to revoke refresh tokens after reuse: %v", err)
+		}
+		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return
 	}
 

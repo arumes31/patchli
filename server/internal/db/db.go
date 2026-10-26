@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -151,4 +152,74 @@ func DeleteAllRefreshTokens(mac string) error {
 	}
 	_, err := DB.Exec("DELETE FROM refresh_tokens WHERE mac_address = $1", mac)
 	return err
+}
+
+// ConsumeRefreshToken atomically deletes an unexpired refresh token and
+// reports whether it existed. Rotation relies on this being a single
+// statement: two concurrent refreshes with the same token cannot both succeed.
+func ConsumeRefreshToken(mac, token string) (bool, error) {
+	if DB == nil {
+		return false, errors.New("database not initialized")
+	}
+	hash := hashToken(token)
+	res, err := DB.Exec("DELETE FROM refresh_tokens WHERE mac_address = $1 AND token_hash = $2 AND expires_at > CURRENT_TIMESTAMP", mac, hash)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// HasActiveRefreshToken reports whether a node already holds an unexpired
+// refresh token, i.e. is currently enrolled.
+func HasActiveRefreshToken(mac string) (bool, error) {
+	if DB == nil {
+		return false, nil
+	}
+	var exists bool
+	query := "SELECT EXISTS(SELECT 1 FROM refresh_tokens WHERE mac_address = $1 AND expires_at > CURRENT_TIMESTAMP)"
+	err := DB.QueryRow(query, mac).Scan(&exists)
+	return exists, err
+}
+
+var (
+	memNoncesMu sync.Mutex
+	memNonces   = map[string]time.Time{}
+)
+
+// ConsumeRegistrationNonce marks a registration nonce as used. It returns
+// false if the nonce was already redeemed. Without a database the nonces are
+// tracked in memory.
+func ConsumeRegistrationNonce(nonce string, expiresAt time.Time) (bool, error) {
+	hash := hashToken(nonce)
+	if DB == nil {
+		memNoncesMu.Lock()
+		defer memNoncesMu.Unlock()
+		now := time.Now()
+		for k, exp := range memNonces {
+			if exp.Before(now) {
+				delete(memNonces, k)
+			}
+		}
+		if _, used := memNonces[hash]; used {
+			return false, nil
+		}
+		memNonces[hash] = expiresAt
+		return true, nil
+	}
+	if _, err := DB.Exec("DELETE FROM registration_nonces WHERE expires_at < CURRENT_TIMESTAMP"); err != nil {
+		return false, err
+	}
+	res, err := DB.Exec("INSERT INTO registration_nonces (nonce_hash, expires_at) VALUES ($1, $2) ON CONFLICT (nonce_hash) DO NOTHING", hash, expiresAt)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }

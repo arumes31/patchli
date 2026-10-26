@@ -91,3 +91,67 @@ func TestInvalidDatabaseConfiguration(t *testing.T) {
 		t.Fatal("invalid migration DSN accepted")
 	}
 }
+
+func TestConsumeRefreshToken(t *testing.T) {
+	connection, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := DB
+	DB = connection
+	t.Cleanup(func() { DB = previous; _ = connection.Close() })
+	token := "opaque-refresh-credential"
+	sum := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(sum[:])
+	for _, rows := range []int64{1, 0} {
+		mock.ExpectExec("DELETE FROM refresh_tokens WHERE mac_address = \\$1 AND token_hash = \\$2 AND expires_at").WithArgs("node", hash).WillReturnResult(sqlmock.NewResult(0, rows))
+		got, err := ConsumeRefreshToken("node", token)
+		if err != nil || got != (rows == 1) {
+			t.Fatalf("ConsumeRefreshToken = %v, %v; rows %d", got, err, rows)
+		}
+	}
+	mock.ExpectExec("DELETE FROM refresh_tokens").WillReturnError(sql.ErrConnDone)
+	if _, err := ConsumeRefreshToken("node", token); !errors.Is(err, sql.ErrConnDone) {
+		t.Fatalf("lost consume error: %v", err)
+	}
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("node").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	if active, err := HasActiveRefreshToken("node"); err != nil || !active {
+		t.Fatalf("HasActiveRefreshToken = %v, %v", active, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConsumeRegistrationNonce(t *testing.T) {
+	previous := DB
+	DB = nil
+	t.Cleanup(func() { DB = previous })
+	expires := time.Now().Add(time.Minute)
+	if ok, err := ConsumeRegistrationNonce("memory-nonce", expires); err != nil || !ok {
+		t.Fatalf("first use rejected: %v %v", ok, err)
+	}
+	if ok, err := ConsumeRegistrationNonce("memory-nonce", expires); err != nil || ok {
+		t.Fatalf("replay accepted: %v %v", ok, err)
+	}
+
+	connection, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	DB = connection
+	t.Cleanup(func() { _ = connection.Close() })
+	sum := sha256.Sum256([]byte("db-nonce"))
+	hash := hex.EncodeToString(sum[:])
+	for _, rows := range []int64{1, 0} {
+		mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("INSERT INTO registration_nonces").WithArgs(hash, expires).WillReturnResult(sqlmock.NewResult(0, rows))
+		ok, err := ConsumeRegistrationNonce("db-nonce", expires)
+		if err != nil || ok != (rows == 1) {
+			t.Fatalf("ConsumeRegistrationNonce = %v, %v; rows %d", ok, err, rows)
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

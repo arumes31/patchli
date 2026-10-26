@@ -32,6 +32,11 @@ type CommandPayload struct {
 	PrePatchScript     string   `json:"pre_patch_script,omitempty"`
 	PostPatchScript    string   `json:"post_patch_script,omitempty"`
 	HealthCheckCommand string   `json:"health_check_command,omitempty"`
+	// NodeID, ExpiresAt and Signature are set when COMMAND_SIGNING_KEY is
+	// configured (see package cmdsign).
+	NodeID    string `json:"node_id,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 type Job struct {
