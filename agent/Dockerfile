@@ -5,10 +5,12 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -o patchli-agent ./cmd/patchli-agent
+ARG VERSION=dev
+RUN go build -ldflags "-X main.Version=${VERSION}" -o patchli-agent ./cmd/patchli-agent
 
 
-FROM alpine:latest
+# The agent manages host packages and therefore runs as root.
+FROM alpine:3.24.3@sha256:b3413572228e34bd1c9245f5565e6cd127005655e8a7899aef33d8e83255c9e6
 WORKDIR /app
 COPY --from=builder /app/patchli-agent .
 

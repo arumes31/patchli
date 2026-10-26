@@ -57,7 +57,7 @@ func TestRejectsUntrustedTokens(t *testing.T) {
 
 func TestRegistrationRejectsFutureAndMalformedTimestamp(t *testing.T) {
 	for _, stamp := range []string{"not-a-time", time.Now().Add(time.Hour).Format(time.RFC3339)} {
-		if ValidateRegistration("group", stamp, GenerateRegistrationSignature("group", stamp)) {
+		if ValidateRegistration("group", stamp, "nonce", GenerateRegistrationSignature("group", stamp, "nonce")) {
 			t.Fatalf("invalid time %q accepted", stamp)
 		}
 	}

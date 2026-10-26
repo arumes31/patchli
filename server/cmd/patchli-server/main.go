@@ -11,6 +11,7 @@ import (
 
 	"github.com/arumes31/patchli/server/internal/api"
 	"github.com/arumes31/patchli/server/internal/auth"
+	"github.com/arumes31/patchli/server/internal/cmdsign"
 	"github.com/arumes31/patchli/server/internal/db"
 	"github.com/arumes31/patchli/server/internal/orchestration"
 	"github.com/arumes31/patchli/server/internal/websocket"
@@ -21,6 +22,14 @@ func main() {
 	log.Println("Starting Patchli Server (Control Plane)...")
 	auth.InitSecrets()
 	websocket.InitSecrets()
+	if err := cmdsign.Init(); err != nil {
+		log.Fatalf("Invalid command signing key: %v", err)
+	}
+	if cmdsign.Enabled() {
+		log.Println("Agent commands will be signed (COMMAND_SIGNING_KEY).")
+	} else {
+		log.Println("WARNING: COMMAND_SIGNING_KEY is not set; agent commands are sent unsigned.")
+	}
 
 	// Initialize Worker Pool
 	pool := orchestration.NewWorkerPool(10)
@@ -64,9 +73,10 @@ func main() {
 	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
 	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
 
-	// Agent Auth
-	mux.HandleFunc("/api/v1/auth/login", api.HandleAgentLogin)
-	mux.HandleFunc("/api/v1/auth/refresh", api.HandleAgentRefresh)
+	// Agent Auth (rate limited per client IP)
+	authLimiter := api.NewRateLimiter(30, time.Minute)
+	mux.HandleFunc("/api/v1/auth/login", authLimiter.Middleware(api.HandleAgentLogin))
+	mux.HandleFunc("/api/v1/auth/refresh", authLimiter.Middleware(api.HandleAgentRefresh))
 
 	// WebSocket
 	mux.HandleFunc("/ws", websocket.HandleWebSocket)
@@ -76,10 +86,20 @@ func main() {
 		port = "8080"
 	}
 
+	if os.Getenv("BASE_URL") == "" {
+		log.Println("WARNING: BASE_URL is not set; setup URLs are derived from the request Host header. Set BASE_URL in production.")
+	}
+
+	// WebSocket connections are hijacked, which clears these deadlines; the
+	// WebSocket handler manages its own read deadline.
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           mux,
+		Handler:           api.SecurityHeaders(mux),
 		ReadHeaderTimeout: 15 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	go func() {
