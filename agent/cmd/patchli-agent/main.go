@@ -4,18 +4,22 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/arumes31/patchli/agent/internal/identity"
@@ -29,12 +33,39 @@ import (
 // On Windows it uses cmd.exe /c, on Unix it uses sh -c.
 func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
 	if runtime.GOOS == "windows" {
+		// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
 		return exec.CommandContext(ctx, "cmd.exe", "/c", script)
 	}
+	// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
 	return exec.CommandContext(ctx, "sh", "-c", script)
 }
 
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
+
+// Version is the agent release version, set at build time with
+// -ldflags "-X main.Version=<version>". Self-updates refuse manifests that
+// are not newer than this version.
+var Version = "dev"
+
+const (
+	// maxAgentBinaryBytes caps the size of a downloaded agent binary.
+	maxAgentBinaryBytes = 256 << 20
+	// maxManifestBytes caps the update manifest and its signature.
+	maxManifestBytes = 64 << 10
+	// maxCommandBytes caps a polled command payload.
+	maxCommandBytes = 1 << 20
+)
+
+// Keep service-owned storage and destructive host operations behind injectable
+// boundaries so command tests never depend on or modify the host installation.
+var (
+	getIdentityFunc  = identity.GetOrGenerate
+	loadStateFunc    = state.LoadState
+	loadTokensFunc   = loadTokens
+	saveStateFunc    = state.SaveState
+	clearStateFunc   = state.ClearState
+	selfDestructFunc = updater.SelfDestruct
+)
 
 // Message types matching server
 const (
@@ -65,6 +96,9 @@ type CommandPayload struct {
 	PrePatchScript     string   `json:"pre_patch_script,omitempty"`
 	PostPatchScript    string   `json:"post_patch_script,omitempty"`
 	HealthCheckCommand string   `json:"health_check_command,omitempty"`
+	NodeID             string   `json:"node_id,omitempty"`
+	ExpiresAt          int64    `json:"expires_at,omitempty"`
+	Signature          string   `json:"signature,omitempty"`
 }
 
 type TokenPair struct {
@@ -88,7 +122,7 @@ func performSelfDiagnosis() {
 	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
 
 	fmt.Print("1. Identity check: ")
-	nodeID, err := identity.GetOrGenerate()
+	nodeID, err := getIdentityFunc()
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
@@ -115,7 +149,13 @@ func performSelfDiagnosis() {
 	if serverURL == "" {
 		serverURL = "localhost:8080"
 	}
-	resp, err := http.Get("http://" + serverURL + "/health")
+	req, err := controllerRequest(context.Background(), "GET", serverURL, "/health", nil)
+	if err != nil {
+		fmt.Printf("FAILED: %v\n", err)
+		return
+	}
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
+	resp, err := controllerClient(30 * time.Second).Do(req)
 	if err != nil {
 		fmt.Printf("FAILED: %v\n", err)
 	} else {
@@ -138,15 +178,12 @@ func getTokenFile() string {
 }
 
 func saveTokens(pair TokenPair) error {
+	// #nosec G117 -- Intentional credential persistence, written only to an owner-restricted file by writeTokens.
 	data, err := json.Marshal(pair)
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(getTokenFile())
-	if err := os.MkdirAll(dir, 0750); err != nil {
-		return fmt.Errorf("failed to create directory %s: %v", dir, err)
-	}
-	return os.WriteFile(getTokenFile(), data, 0600)
+	return writeTokens(getTokenFile(), data)
 }
 
 func loadTokens() (*TokenPair, error) {
@@ -167,18 +204,19 @@ func refreshTokens(ctx context.Context, serverURL, nodeID string, refreshToken s
 		"refresh_token": refreshToken,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+serverURL+"/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
+	req, err := controllerRequest(ctx, "POST", serverURL, "/api/v1/auth/refresh", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create refresh request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := controllerClient(30 * time.Second)
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("refresh failed: %d", resp.StatusCode)
@@ -212,14 +250,18 @@ func RunAgent(ctx context.Context) {
 		log.Fatalf("Failed to detect package manager: %v", err)
 	}
 
-	nodeID, err := identity.GetOrGenerate()
+	nodeID, err := getIdentityFunc()
 	if err != nil {
 		log.Fatalf("Failed to get agent identity: %v", err)
 	}
 	log.Printf("Agent Identity (UUID): %s", nodeID)
 
+	if CommandPubKey == "" {
+		log.Println("WARNING: COMMAND_PUB_KEY is not set; server commands are executed without signature verification.")
+	}
+
 	// State Recovery on Boot
-	lastState, _ := state.LoadState()
+	lastState, _ := loadStateFunc()
 	if lastState != nil && lastState.Status == "running" {
 		log.Printf("RECOVERY: Detected interrupted job %s. Reporting to server...", lastState.JobID)
 	}
@@ -231,7 +273,7 @@ func RunAgent(ctx context.Context) {
 
 	// Auth: load existing tokens
 	var tokens *TokenPair
-	tokens, _ = loadTokens()
+	tokens, _ = loadTokensFunc()
 
 	if tokens == nil {
 		log.Println("No tokens found. Agent requires initial registration.")
@@ -244,12 +286,21 @@ func RunAgent(ctx context.Context) {
 			return fmt.Errorf("no tokens available")
 		}
 
-		u := url.URL{Scheme: "ws", Host: serverURL, Path: "/ws"}
+		u, err := controllerEndpoint(serverURL, "/ws")
+		if err != nil {
+			return err
+		}
+		if u.Scheme == "https" {
+			u.Scheme = "wss"
+		} else {
+			u.Scheme = "ws"
+		}
 		header := http.Header{}
 		header.Set("Authorization", "Bearer "+tokens.AccessToken)
 
-		log.Printf("Connecting to %s", u.String())
-		conn, resp, err := websocket.DefaultDialer.Dial(u.String(), header)
+		// #nosec G706 -- %q escapes newlines and other control characters.
+		log.Printf("Connecting to %q", u.String())
+		conn, resp, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
 		if err != nil {
 			if resp != nil && resp.StatusCode == http.StatusUnauthorized {
 				log.Println("Unauthorized. Attempting token refresh...")
@@ -264,7 +315,7 @@ func RunAgent(ctx context.Context) {
 			startHTTPPolling(ctx, serverURL, nodeID, pm, tokens)
 			return err
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		go runHeartbeat(ctx, conn, nodeID, pm)
 
@@ -282,6 +333,10 @@ func RunAgent(ctx context.Context) {
 					continue
 				}
 				log.Printf("Received command: %s (Job: %s)", cmd.Action, cmd.ID)
+				if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
+					log.Printf("Rejected command %s: %v", cmd.ID, err)
+					continue
+				}
 				go executeCommand(ctx, pm, cmd)
 			}
 		}
@@ -345,7 +400,7 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater.PackageManager, tokens *TokenPair) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := controllerClient(60 * time.Second)
 
 	for {
 		hostname, _ := os.Hostname()
@@ -359,7 +414,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 		}
 		data, _ := json.Marshal(hb)
 
-		req, err := http.NewRequest("POST", "http://"+serverHost+"/api/v1/poll", bytes.NewBuffer(data))
+		req, err := controllerRequest(ctx, "POST", serverHost, "/api/v1/poll", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Failed to create poll request: %v", err)
 			select {
@@ -374,6 +429,7 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 			req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
 		}
 
+		// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("HTTP Poll error: %v", err)
@@ -387,8 +443,15 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 
 		if resp.StatusCode == http.StatusOK {
 			var cmd CommandPayload
-			if err := json.NewDecoder(resp.Body).Decode(&cmd); err == nil && cmd.Action != "" {
-				go executeCommand(ctx, pm, cmd)
+			if err := json.NewDecoder(io.LimitReader(resp.Body, maxCommandBytes)).Decode(&cmd); err == nil && cmd.Action != "" {
+				if tokens == nil {
+					// Never act on commands from an unauthenticated session.
+					log.Printf("Ignoring command %s: agent is not authenticated", cmd.ID)
+				} else if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
+					log.Printf("Rejected command %s: %v", cmd.ID, err)
+				} else {
+					go executeCommand(ctx, pm, cmd)
+				}
 			}
 		} else if resp.StatusCode == http.StatusUnauthorized && tokens != nil {
 			log.Println("Poll Unauthorized. Attempting token refresh...")
@@ -427,7 +490,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 			}
 		}
 
-		if err := state.SaveState(state.State{
+		if err := saveStateFunc(state.State{
 			JobID:  cmd.ID,
 			Action: cmd.Action,
 			Status: "running",
@@ -435,7 +498,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 			log.Printf("Failed to save state: %v", err)
 		}
 		defer func() {
-			_ = state.ClearState()
+			_ = clearStateFunc()
 		}()
 	}
 
@@ -448,7 +511,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 		err = pm.Cleanup(ctx)
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "self_destruct":
-		err = updater.SelfDestruct()
+		err = selfDestructFunc()
 		res = updater.UpdateResult{Success: err == nil, Error: err}
 	case "update_agent":
 		log.Printf("Auto-updating agent...")
@@ -486,22 +549,47 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 	log.Printf("Job %s finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
 }
 
+// agentManifest describes a signed agent release. The Ed25519 signature
+// (TRUSTED_PUB_KEY) covers the raw manifest bytes, binding the binary hash to
+// a version and platform so an older signed build cannot be replayed.
+type agentManifest struct {
+	Version string `json:"version"`
+	OS      string `json:"os"`
+	Arch    string `json:"arch"`
+	SHA256  string `json:"sha256"`
+	Size    int64  `json:"size"`
+}
+
 var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResult {
 	serverURL := os.Getenv("SERVER_URL")
 	if serverURL == "" {
 		serverURL = "localhost:8080"
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://"+serverURL+"/download/agent", nil)
+	client := controllerClient(5 * time.Minute)
+
+	manifestBytes, err := fetchLimited(ctx, client, serverURL, "/download/agent.manifest", maxManifestBytes)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to download manifest: %v", err)}
+	}
+	sigBytes, err := fetchLimited(ctx, client, serverURL, "/download/agent.manifest.sig", maxManifestBytes)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to download manifest signature: %v", err)}
+	}
+	manifest, err := verifyManifest(manifestBytes, sigBytes, Version)
+	if err != nil {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("manifest verification failed: %v", err)}
+	}
+
+	req, err := controllerRequest(ctx, "GET", serverURL, "/download/agent", nil)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
-
-	client := &http.Client{Timeout: 5 * time.Minute}
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
 	resp, err := client.Do(req)
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during agent download", resp.StatusCode)}
@@ -516,59 +604,24 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 		_ = os.Remove(tmpName)
 	}()
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	// Never read more than the signed size, and verify the signed hash.
+	hasher := sha256.New()
+	n, err := io.Copy(io.MultiWriter(tmpFile, hasher), io.LimitReader(resp.Body, manifest.Size+1))
+	if err != nil {
 		_ = tmpFile.Close()
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 	if err := tmpFile.Close(); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
-
-	// Download the signature file before verification
-	sigReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+serverURL+"/download/agent.sig", nil)
-	if err != nil {
-		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to create signature download request: %v", err)}
+	if n != manifest.Size {
+		return updater.UpdateResult{Success: false, Error: fmt.Errorf("binary size %d does not match manifest size %d", n, manifest.Size)}
 	}
-	sigResp, err := client.Do(sigReq)
-	if err != nil {
-		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to download signature: %v", err)}
-	}
-	defer sigResp.Body.Close()
-
-	if sigResp.StatusCode != http.StatusOK {
-		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during signature download", sigResp.StatusCode)}
+	if !strings.EqualFold(hex.EncodeToString(hasher.Sum(nil)), manifest.SHA256) {
+		return updater.UpdateResult{Success: false, Error: errors.New("binary hash does not match signed manifest")}
 	}
 
-	sigFile, err := os.CreateTemp("", "patchli-agent-sig-*")
-	if err != nil {
-		return updater.UpdateResult{Success: false, Error: err}
-	}
-	sigName := sigFile.Name()
-	defer func() {
-		_ = os.Remove(sigName)
-	}()
-
-	if _, err := io.Copy(sigFile, sigResp.Body); err != nil {
-		_ = sigFile.Close()
-		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to write signature file: %v", err)}
-	}
-	if err := sigFile.Close(); err != nil {
-		return updater.UpdateResult{Success: false, Error: err}
-	}
-
-	// Rename the signature file to match what verifySignature expects
-	sigDest := tmpName + ".sig"
-	if err := os.Rename(sigName, sigDest); err != nil {
-		return updater.UpdateResult{Success: false, Error: fmt.Errorf("failed to rename signature file: %v", err)}
-	}
-	defer func() {
-		_ = os.Remove(sigDest)
-	}()
-
-	if err := verifySignature(tmpName); err != nil {
-		return updater.UpdateResult{Success: false, Error: fmt.Errorf("signature verification failed: %v", err)}
-	}
-
+	// #nosec G302 -- This is the Ed25519-verified executable; others may execute but cannot modify it.
 	if err := os.Chmod(tmpName, 0755); err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
@@ -588,63 +641,128 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 		return updater.UpdateResult{Success: false, Error: err}
 	}
 
+	log.Printf("Agent updated from %s to %s", Version, manifest.Version)
 	out, err := restartAgent(ctx)
 	return updater.UpdateResult{Success: err == nil, Output: string(out), Error: err}
 }
 
-func verifySignature(filePath string) error {
+// fetchLimited downloads a small controller resource, failing if it exceeds limit.
+func fetchLimited(ctx context.Context, client *http.Client, serverURL, endpoint string, limit int64) ([]byte, error) {
+	req, err := controllerRequest(ctx, "GET", serverURL, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, errors.New("response too large")
+	}
+	return data, nil
+}
+
+// verifyManifest checks the manifest signature against TRUSTED_PUB_KEY and
+// that it targets this platform with a version newer than currentVersion.
+func verifyManifest(manifestBytes, sigBase64 []byte, currentVersion string) (*agentManifest, error) {
 	if TrustedPubKey == "" {
-		return fmt.Errorf("TRUSTED_PUB_KEY not set: refusing to verify signature")
+		return nil, fmt.Errorf("TRUSTED_PUB_KEY not set: refusing to verify signature")
 	}
 
 	pubKeyBytes, err := base64.StdEncoding.DecodeString(TrustedPubKey)
 	if err != nil {
-		return fmt.Errorf("failed to decode trusted public key: %v", err)
+		return nil, fmt.Errorf("failed to decode trusted public key: %v", err)
 	}
 	if len(pubKeyBytes) != ed25519.PublicKeySize {
-		return fmt.Errorf("invalid public key size")
+		return nil, fmt.Errorf("invalid public key size")
 	}
 
-	sigPath := filePath + ".sig"
-	sigBase64, err := os.ReadFile(sigPath)
+	sigBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(sigBase64)))
 	if err != nil {
-		return fmt.Errorf("failed to read signature file %s: %v", sigPath, err)
+		return nil, fmt.Errorf("failed to decode signature: %v", err)
+	}
+	if !ed25519.Verify(pubKeyBytes, manifestBytes, sigBytes) {
+		return nil, fmt.Errorf("cryptographic signature verification failed")
 	}
 
-	sigBytes, err := base64.StdEncoding.DecodeString(string(sigBase64))
-	if err != nil {
-		return fmt.Errorf("failed to decode signature: %v", err)
+	var m agentManifest
+	if err := json.Unmarshal(manifestBytes, &m); err != nil {
+		return nil, fmt.Errorf("invalid manifest: %v", err)
 	}
+	if m.OS != runtime.GOOS || m.Arch != runtime.GOARCH {
+		return nil, fmt.Errorf("manifest targets %s/%s, not %s/%s", m.OS, m.Arch, runtime.GOOS, runtime.GOARCH)
+	}
+	if m.Size <= 0 || m.Size > maxAgentBinaryBytes {
+		return nil, fmt.Errorf("invalid binary size %d", m.Size)
+	}
+	if len(m.SHA256) != sha256.Size*2 {
+		return nil, fmt.Errorf("invalid binary hash")
+	}
+	if !isNewerVersion(m.Version, currentVersion) {
+		return nil, fmt.Errorf("refusing update to version %q: not newer than %q", m.Version, currentVersion)
+	}
+	return &m, nil
+}
 
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to read binary: %v", err)
+// parseVersion parses "v1.2.3" / "1.2.3" into numeric components.
+func parseVersion(v string) ([]int, bool) {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
 	}
+	if v == "" {
+		return nil, false
+	}
+	parts := strings.Split(v, ".")
+	out := make([]int, len(parts))
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
 
-	if !ed25519.Verify(pubKeyBytes, data, sigBytes) {
-		return fmt.Errorf("cryptographic signature verification failed")
+// isNewerVersion reports whether candidate is strictly newer than current.
+// Development builds (unparseable current version) accept any valid version.
+func isNewerVersion(candidate, current string) bool {
+	c, ok := parseVersion(candidate)
+	if !ok {
+		return false
 	}
-	return nil
+	cur, ok := parseVersion(current)
+	if !ok {
+		return true
+	}
+	for i := 0; i < len(c) || i < len(cur); i++ {
+		var a, b int
+		if i < len(c) {
+			a = c[i]
+		}
+		if i < len(cur) {
+			b = cur[i]
+		}
+		if a != b {
+			return a > b
+		}
+	}
+	return false
 }
 
 func restartAgent(ctx context.Context) ([]byte, error) {
 	if runtime.GOOS == "windows" {
-		scPath, err := exec.LookPath("sc.exe")
-		if err == nil {
-			helper := exec.Command("cmd.exe", "/c", "timeout /t 2 /nobreak >nul && "+scPath+" start patchli-agent")
-			_ = helper.Start()
-			_ = exec.CommandContext(ctx, scPath, "stop", "patchli-agent").Run()
-			return []byte("Restarting via sc.exe helper"), nil
-		}
-
-		psPath, err := exec.LookPath("powershell.exe")
-		if err != nil {
-			return nil, fmt.Errorf("failed to find powershell.exe or sc.exe: %v", err)
-		}
-		helper := exec.Command(psPath, "-Command", "Start-Sleep -Seconds 2; Start-Service -Name patchli-agent")
-		_ = helper.Start()
-		_ = exec.CommandContext(ctx, psPath, "-Command", "Stop-Service -Name patchli-agent").Run()
-		return []byte("Restarting via powershell.exe helper"), nil
+		return restartWindowsAgent()
 	}
 	if _, err := os.Stat("/run/openrc"); err == nil {
 		return exec.CommandContext(ctx, "rc-service", "patchli-agent", "restart").CombinedOutput()

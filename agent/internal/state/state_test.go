@@ -8,11 +8,7 @@ import (
 
 func TestState(t *testing.T) {
 	// Create a temporary state file for testing
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -59,11 +55,7 @@ func TestState(t *testing.T) {
 }
 
 func TestClearStateIdempotent(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -81,43 +73,43 @@ func TestClearStateIdempotent(t *testing.T) {
 }
 
 func TestLoadStateInvalidJSON(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "invalid.json")
 	defer func() { stateFile = oldStateFile }()
 
-	_ = os.WriteFile(stateFile, []byte("{invalid"), 0644)
-	_, err = LoadState()
+	if err := os.WriteFile(stateFile, []byte("{invalid"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadState()
 	if err == nil {
 		t.Error("LoadState should have failed for invalid JSON")
 	}
 }
 
 func TestSaveStateError(t *testing.T) {
-	// Test SaveState with invalid path
-	oldStateFile := stateFile
-	// On Windows, a path with invalid characters
-	stateFile = "Z:\\invalid\\path\\?:|/state.json"
-	defer func() { stateFile = oldStateFile }()
-
-	state := State{JobID: "test"}
-	err := SaveState(state)
-	if err == nil {
-		t.Error("SaveState should have failed for invalid path")
+	parent := filepath.Join(t.TempDir(), "file-not-directory")
+	if err := os.WriteFile(parent, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	previous := stateFile
+	stateFile = filepath.Join(parent, "state.json")
+	t.Cleanup(func() { stateFile = previous })
+	if err := SaveState(State{JobID: "test"}); err == nil {
+		t.Fatal("SaveState accepted a regular file as its parent directory")
+	}
+	data, err := os.ReadFile(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "fixture" {
+		t.Fatal("failed save modified the parent fixture")
 	}
 }
 
 func TestLoadStateError(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 
 	oldStateFile := stateFile
 	stateFile = filepath.Join(tmpDir, "state.json")
@@ -128,7 +120,7 @@ func TestLoadStateError(t *testing.T) {
 		t.Fatalf("Failed to write invalid json: %v", err)
 	}
 
-	_, err = LoadState()
+	_, err := LoadState()
 	if err == nil {
 		t.Error("LoadState should have failed for invalid JSON")
 	}

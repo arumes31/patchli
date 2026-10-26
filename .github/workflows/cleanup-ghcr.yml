@@ -1,42 +1,39 @@
-name: Cleanup GHCR Images
-
+name: Review GHCR Cleanup
 on:
   workflow_dispatch:
     inputs:
-      min_versions_to_keep:
-        description: 'Minimum number of versions to keep'
-        default: '10'
-        required: true
-      delete_untagged:
-        description: 'Delete untagged versions'
+      dry_run:
+        description: Report unreferenced versions older than 30 days without deletion
         type: boolean
+        required: true
         default: true
-
+permissions:
+  contents: read
+concurrency:
+  group: ghcr-cleanup-${{ github.repository }}
+  cancel-in-progress: false
 jobs:
   cleanup:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: write
-    
     steps:
-      - name: Extract repository name
-        shell: bash
-        run: echo "REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)" >> $GITHUB_ENV
-
-      - name: Cleanup Server images
-        uses: actions/delete-package-versions@v5
+      - name: Review unreferenced OCI manifests
+        # Verified v3.1.0 protects architecture and attestation children of kept
+        # tagged indexes and clears deletion candidates on incomplete lookups.
+        uses: docker://ghcr.io/snok/container-retention-policy@sha256:884037f146d6ef574b61fbcc59bef490f887322e6b9dc2eefcf364cb4e9b4112
         with:
-          package-name: '${{ env.REPO_NAME }}/server'
-          package-type: 'container'
-          min-versions-to-keep: ${{ github.event.inputs.min_versions_to_keep }}
-          delete-only-untagged-versions: ${{ github.event.inputs.delete_untagged }}
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Cleanup Agent images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: '${{ env.REPO_NAME }}/agent'
-          package-type: 'container'
-          min-versions-to-keep: ${{ github.event.inputs.min_versions_to_keep }}
-          delete-only-untagged-versions: ${{ github.event.inputs.delete_untagged }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          args: >-
+            --account=user
+            --token=${{ secrets.GITHUB_TOKEN }}
+            --image-names=patchli/server,patchli/agent
+            --image-tags=
+            --shas-to-skip=
+            --tag-selection=untagged
+            --keep-n-most-recent=30
+            --timestamp-to-use=updated_at
+            --cut-off=30d
+            --dry-run=${{ inputs.dry_run }}
+        env:
+          RUST_LOG: container_retention_policy=INFO

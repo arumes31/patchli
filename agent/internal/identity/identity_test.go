@@ -14,11 +14,7 @@ func TestGetOrGenerate(t *testing.T) {
 	defer func() { idFile = originalIdFile }()
 
 	t.Run("generate new ID when file doesn't exist", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		idFile = filepath.Join(tmpDir, "node_id")
 
@@ -41,11 +37,7 @@ func TestGetOrGenerate(t *testing.T) {
 	})
 
 	t.Run("load existing valid ID", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		idFile = filepath.Join(tmpDir, "node_id")
 		expectedID := uuid.New().String()
@@ -63,11 +55,7 @@ func TestGetOrGenerate(t *testing.T) {
 	})
 
 	t.Run("generate new ID when file content is invalid", func(t *testing.T) {
-		tmpDir, err := os.MkdirTemp("", "patchli-test-*")
-		if err != nil {
-			t.Fatalf("failed to create temp dir: %v", err)
-		}
-		defer os.RemoveAll(tmpDir)
+		tmpDir := t.TempDir()
 
 		idFile = filepath.Join(tmpDir, "node_id")
 		if err := os.WriteFile(idFile, []byte("invalid-uuid"), 0600); err != nil {
@@ -94,4 +82,31 @@ func TestGetOrGenerate(t *testing.T) {
 			t.Errorf("file content mismatch: expected %s, got %s", id, string(data))
 		}
 	})
+}
+
+func TestGetOrGenerateIdentityPersists(t *testing.T) {
+	previous := idFile
+	idFile = filepath.Join(t.TempDir(), "node_id")
+	t.Cleanup(func() { idFile = previous })
+	first, err := GetOrGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := uuid.Parse(first); err != nil {
+		t.Fatalf("invalid generated identity: %v", err)
+	}
+	persisted, err := os.ReadFile(idFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(persisted) != first {
+		t.Fatal("generated identity was not persisted")
+	}
+	second, err := GetOrGenerate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatalf("identity changed across reload: %q -> %q", first, second)
+	}
 }

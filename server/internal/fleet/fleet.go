@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/arumes31/patchli/server/internal/cmdsign"
 	"github.com/arumes31/patchli/server/internal/models"
 	"github.com/gorilla/websocket"
 )
@@ -26,8 +27,8 @@ func (am *AgentManager) Register(mac string, conn *websocket.Conn, p models.Hear
 	am.mu.Lock()
 	defer am.mu.Unlock()
 	// Close existing connection to prevent resource leak on re-registration
-	if oldConn, ok := am.agents[mac]; ok {
-		oldConn.Close()
+	if oldConn, ok := am.agents[mac]; ok && oldConn != conn {
+		_ = oldConn.Close() // The old connection is being replaced.
 	}
 	am.agents[mac] = conn
 	am.details[mac] = &models.AgentDetails{
@@ -48,6 +49,23 @@ func (am *AgentManager) Unregister(mac string) {
 	if a, ok := am.details[mac]; ok {
 		a.Status = "offline"
 	}
+}
+
+// UnregisterConn unregisters mac only if conn is still the registered
+// connection for it, so a replaced connection cannot evict its successor.
+// It reports whether the agent was unregistered.
+func (am *AgentManager) UnregisterConn(mac string, conn *websocket.Conn) bool {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	if current, ok := am.agents[mac]; !ok || current != conn {
+		return false
+	}
+	delete(am.agents, mac)
+	delete(am.activeJobs, mac)
+	if a, ok := am.details[mac]; ok {
+		a.Status = "offline"
+	}
+	return true
 }
 
 func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {
@@ -93,6 +111,11 @@ func (am *AgentManager) GetStats() (total int, online int, reboot int) {
 }
 
 func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error {
+	cmd, err := cmdsign.Sign(cmd, mac)
+	if err != nil {
+		return err
+	}
+
 	am.mu.Lock()
 	conn, ok := am.agents[mac]
 	if !ok {
@@ -107,7 +130,7 @@ func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error
 		Type:    "command",
 		Payload: cmd,
 	}
-	err := conn.WriteJSON(msg)
+	err = conn.WriteJSON(msg)
 	am.mu.Unlock()
 	return err
 }

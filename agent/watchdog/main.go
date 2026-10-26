@@ -29,7 +29,8 @@ func parseArgs(args []string) string {
 }
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
-	log.Printf("Starting Patchli Watchdog for %s", agentPath)
+	// #nosec G706 -- %q escapes newlines and other control characters in the local command-line argument.
+	log.Printf("Starting Patchli Watchdog for %q", agentPath)
 
 	for {
 		cmd := execCommand(agentPath)

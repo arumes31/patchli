@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"time"
 )
 
 type WebhookPayload struct {
@@ -30,7 +29,7 @@ var NotifyWebhooks = func(payload WebhookPayload) {
 			continue
 		}
 		if !isValidURL(u) {
-			log.Printf("Invalid or insecure webhook URL: %s", u)
+			log.Print("Invalid or insecure webhook URL")
 			continue
 		}
 		go sendWebhook(u, payload)
@@ -38,29 +37,31 @@ var NotifyWebhooks = func(payload WebhookPayload) {
 }
 
 func sendWebhook(targetURL string, payload WebhookPayload) {
+	if !isValidURL(targetURL) {
+		return
+	}
 	data, err := json.Marshal(payload)
 	if err != nil {
 		log.Printf("Failed to marshal webhook payload: %v", err)
 		return
 	}
 
-	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data))
+	req, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(data)) // #nosec G704 -- webhookClient validates resolved IPs when dialing and rejects redirects.
 	if err != nil {
 		log.Printf("Failed to create webhook request: %v", err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := webhookClient.Do(req) // #nosec G704 -- Transport checks every resolved IP and dials it directly; redirects are disabled.
 	if err != nil {
 		log.Printf("Webhook delivery failed: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
-		log.Printf("Webhook returned error status: %d", resp.StatusCode)
+		log.Printf("Webhook returned error status: %d", resp.StatusCode) // #nosec G706 -- StatusCode is an integer formatted with %d.
 	}
 }
 
@@ -75,14 +76,13 @@ func NotifySlack(webhookURL string, msg string) {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := webhookClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Slack webhook error: %v", err)
 			return
 		}
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 		}
 	}()
 }
@@ -98,14 +98,13 @@ func NotifyDiscord(webhookURL string, msg string) {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := webhookClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Discord webhook error: %v", err)
 			return
 		}
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 		}
 	}()
 }
@@ -127,14 +126,13 @@ func NotifyTeams(webhookURL string, title, text string) {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, err := client.Post(webhookURL, "application/json", bytes.NewBuffer(data))
+		resp, err := webhookClient.Post(webhookURL, "application/json", bytes.NewBuffer(data))
 		if err != nil {
 			log.Printf("Teams webhook error: %v", err)
 			return
 		}
 		if resp != nil {
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 		}
 	}()
 }

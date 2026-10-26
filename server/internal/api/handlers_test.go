@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -80,11 +80,13 @@ func TestHandleStats(t *testing.T) {
 		rr := httptest.NewRecorder()
 		HandleStats(rr, req)
 		var stats struct {
-			Vitality  int    `json:"vitality"`
-			Immune    string `json:"immune"`
-			Recovery  int    `json:"recovery"`
+			Vitality int    `json:"vitality"`
+			Immune   string `json:"immune"`
+			Recovery int    `json:"recovery"`
 		}
-		json.Unmarshal(rr.Body.Bytes(), &stats)
+		if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+			t.Fatal(err)
+		}
 		if stats.Vitality != 0 || stats.Immune != "0%" {
 			t.Errorf("Expected 0 stats, got %+v", stats)
 		}
@@ -106,11 +108,13 @@ func TestHandleStats(t *testing.T) {
 		HandleStats(rr, req)
 
 		var stats struct {
-			Vitality  int    `json:"vitality"`
-			Immune    string `json:"immune"`
-			Recovery  int    `json:"recovery"`
+			Vitality int    `json:"vitality"`
+			Immune   string `json:"immune"`
+			Recovery int    `json:"recovery"`
 		}
-		json.Unmarshal(rr.Body.Bytes(), &stats)
+		if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
+			t.Fatal(err)
+		}
 
 		if stats.Vitality != 3 {
 			t.Errorf("expected vitality 3, got %d", stats.Vitality)
@@ -129,13 +133,13 @@ func TestHandleSetup(t *testing.T) {
 	setupHandlers(t)
 
 	tests := []struct {
-		name            string
-		query           string
-		header          map[string]string
-		env             map[string]string
-		useTLS          bool
-		expectedInBody  []string
-		expectedStatus  int
+		name           string
+		query          string
+		header         map[string]string
+		env            map[string]string
+		useTLS         bool
+		expectedInBody []string
+		expectedStatus int
 	}{
 		{
 			name:           "Defaults",
@@ -146,7 +150,7 @@ func TestHandleSetup(t *testing.T) {
 		{
 			name:           "Linux default",
 			query:          "group=prod&os=linux",
-			expectedInBody: []string{"GROUP='prod'", "#!/bin/bash", "SERVER_URL="},
+			expectedInBody: []string{"GROUP='prod'", "#!/bin/bash", "SERVER_URL=", "NONCE='"},
 			expectedStatus: http.StatusOK,
 		},
 		{
@@ -194,14 +198,10 @@ func TestHandleSetup(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set env
 			for k, v := range tt.env {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				t.Setenv(k, v)
 			}
 
-			req, err := http.NewRequest("GET", "/api/v1/setup?"+tt.query, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			req := httptest.NewRequest("GET", "/api/v1/setup?"+tt.query, nil)
 
 			if tt.useTLS {
 				req.TLS = &tls.ConnectionState{}
@@ -240,10 +240,7 @@ func TestServeSetupUI(t *testing.T) {
 	setupHandlers(t)
 
 	t.Run("Default", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 
 		rr := httptest.NewRecorder()
 		ServeSetupUI(rr, req)
@@ -258,13 +255,9 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With BASE_URL", func(t *testing.T) {
-		os.Setenv("BASE_URL", "http://custom.base.url")
-		defer os.Unsetenv("BASE_URL")
+		t.Setenv("BASE_URL", "http://custom.base.url")
 
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 
 		rr := httptest.NewRecorder()
 		ServeSetupUI(rr, req)
@@ -275,10 +268,7 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With X-Forwarded-Proto", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 		req.Header.Set("X-Forwarded-Proto", "https")
 
 		rr := httptest.NewRecorder()
@@ -290,10 +280,7 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With TLS", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/setup", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest("GET", "/setup", nil)
 		req.TLS = &tls.ConnectionState{}
 
 		rr := httptest.NewRecorder()
@@ -353,4 +340,67 @@ func TestHandleStreamNoFlusher(t *testing.T) {
 	nf := &noFlusher{rr}
 
 	HandleStream(nf, req)
+}
+
+func TestSetupURLTrust(t *testing.T) {
+	for _, tc := range []struct {
+		name, base, proxy, remote, proto, want string
+		status                                 int
+	}{
+		{"untrusted forwarded header", "", "192.0.2.1", "192.0.2.2:1234", "https", "http://controller.example", http.StatusOK},
+		{"trusted forwarded header", "", "192.0.2.1", "192.0.2.1:1234", "HTTPS", "https://controller.example", http.StatusOK},
+		{"trusted without port", "", "192.0.2.1", "192.0.2.1", "https", "https://controller.example", http.StatusOK},
+		{"trusted unsupported protocol", "", "192.0.2.1", "192.0.2.1:1234", "ftp", "http://controller.example", http.StatusOK},
+		{"invalid scheme", "javascript:alert(1)", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
+		{"malformed url", "http://%", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
+		{"injected host header", "", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BASE_URL", tc.base)
+			t.Setenv("TRUSTED_PROXY", tc.proxy)
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "http://controller.example/setup", nil)
+			if tc.name == "injected host header" {
+				req.Host = `evil.example/"><script>alert(1)</script>`
+			}
+			req.RemoteAddr = tc.remote
+			req.Header.Set("X-Forwarded-Proto", tc.proto)
+			ServeSetupUI(rr, req)
+			if rr.Code != tc.status || !strings.Contains(rr.Body.String(), tc.want) {
+				t.Fatalf("status=%d want=%d expected body to contain %q", rr.Code, tc.status, tc.want)
+			}
+		})
+	}
+}
+
+type failingResponseWriter struct {
+	header http.Header
+	writes int
+}
+
+func (w *failingResponseWriter) Header() http.Header { return w.header }
+func (w *failingResponseWriter) WriteHeader(int)     {}
+func (w *failingResponseWriter) Write([]byte) (int, error) {
+	w.writes++
+	return 0, fmt.Errorf("client disconnected")
+}
+
+func TestHandlersDisconnectedClient(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"nodes", HandleNodes}, {"stats", HandleStats}, {"setup", HandleSetup}, {"setup UI", ServeSetupUI}, {"stream", HandleStream},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := &failingResponseWriter{header: make(http.Header)}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			req := httptest.NewRequest(http.MethodGet, "http://controller.example/", nil).WithContext(ctx)
+			tc.handler(w, req)
+			if w.writes == 0 {
+				t.Fatal("handler did not attempt response")
+			}
+		})
+	}
 }

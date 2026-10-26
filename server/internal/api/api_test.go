@@ -41,10 +41,7 @@ func TestHandleSetupSecurity(t *testing.T) {
 			q.Set("group", tt.group)
 			u.RawQuery = q.Encode()
 
-			req, err := http.NewRequest("GET", u.String(), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			req := httptest.NewRequest("GET", u.String(), nil)
 
 			rr := httptest.NewRecorder()
 			handler := http.HandlerFunc(HandleSetup)
@@ -59,8 +56,7 @@ func TestHandleSetupSecurity(t *testing.T) {
 }
 
 func TestHandleSetupUnauthorized(t *testing.T) {
-	os.Setenv("ADMIN_TOKEN", "testtoken")
-	defer os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "testtoken")
 
 	tests := []struct {
 		name       string
@@ -91,7 +87,7 @@ func TestHandleSetupUnauthorized(t *testing.T) {
 }
 
 func TestAuthMiddlewareNoAdminTokenSet(t *testing.T) {
-	os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "")
 
 	req, _ := http.NewRequest("GET", "/api/v1/setup", nil)
 	req.Header.Set("Authorization", "Bearer anything")
@@ -179,8 +175,7 @@ func TestIsValidGroupName(t *testing.T) {
 }
 
 func TestHandleNodesWithAuth(t *testing.T) {
-	os.Setenv("ADMIN_TOKEN", "testtoken")
-	defer os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "testtoken")
 
 	req, err := http.NewRequest("GET", "/api/v1/nodes", nil)
 	if err != nil {
@@ -199,8 +194,7 @@ func TestHandleNodesWithAuth(t *testing.T) {
 }
 
 func TestHandleStatsWithAuth(t *testing.T) {
-	os.Setenv("ADMIN_TOKEN", "testtoken")
-	defer os.Unsetenv("ADMIN_TOKEN")
+	t.Setenv("ADMIN_TOKEN", "testtoken")
 
 	req, err := http.NewRequest("GET", "/api/v1/stats", nil)
 	if err != nil {
