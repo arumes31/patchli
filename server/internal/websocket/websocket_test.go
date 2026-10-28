@@ -43,7 +43,7 @@ func TestHandleWebSocket(t *testing.T) {
 			Payload json.RawMessage `json:"payload"`
 		}{
 			Type:    "heartbeat",
-			Payload: json.RawMessage(`{"mac_address":"00:11:22:33:44:55", "hostname":"test-node", "os":"Linux"}`),
+			Payload: json.RawMessage(`{"mac_address":"test-mac", "hostname":"test-node", "os":"Linux"}`),
 		}
 		_ = ws.WriteJSON(heartbeat)
 
@@ -76,7 +76,7 @@ func TestHandleWebSocket(t *testing.T) {
 				Payload json.RawMessage `json:"payload"`
 			}{
 				Type:    "heartbeat",
-				Payload: json.RawMessage(`{"mac_address":"disconnect-mac", "hostname":"temp"}`),
+				Payload: json.RawMessage(`{"mac_address":"test-mac", "hostname":"temp"}`),
 			}
 			_ = ws.WriteJSON(heartbeat)
 			time.Sleep(50 * time.Millisecond)
@@ -142,20 +142,25 @@ func TestInitSecrets(t *testing.T) {
 }
 
 func TestOriginPolicy(t *testing.T) {
+	t.Setenv("TRUSTED_PROXY", "192.0.2.1")
 	for _, tc := range []struct {
-		name, origin, proto string
-		tls, want           bool
+		name, origin, proto, remote string
+		tls, want                   bool
 	}{
 		{name: "agent without origin", want: true},
 		{name: "same host", origin: "http://controller.example", want: true},
 		{name: "foreign host", origin: "http://attacker.example", want: false},
 		{name: "direct TLS", origin: "https://controller.example", tls: true, want: true},
 		{name: "TLS scheme mismatch", origin: "http://controller.example", tls: true, want: false},
-		{name: "forwarded TLS", origin: "https://controller.example", proto: "HTTPS", want: true},
-		{name: "unsupported forwarded scheme", origin: "https://controller.example", proto: "ftp", want: false},
+		{name: "forwarded TLS from trusted proxy", origin: "https://controller.example", proto: "HTTPS", remote: "192.0.2.1:1234", want: true},
+		{name: "forwarded TLS from untrusted client", origin: "https://controller.example", proto: "HTTPS", remote: "192.0.2.2:1234", want: false},
+		{name: "unsupported forwarded scheme", origin: "https://controller.example", proto: "ftp", remote: "192.0.2.1:1234", want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "http://controller.example/ws", nil)
+			if tc.remote != "" {
+				req.RemoteAddr = tc.remote
+			}
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("X-Forwarded-Proto", tc.proto)
 			if tc.tls {
@@ -177,6 +182,14 @@ func TestHandleWebSocketAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	pair, err := auth.GenerateTokenPair("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": "node", "exp": time.Now().Add(time.Hour).Unix()}).SignedString(jwtSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name, header string
 		status       int
@@ -186,6 +199,8 @@ func TestHandleWebSocketAuthentication(t *testing.T) {
 		{"wrong scheme", "Basic token", http.StatusUnauthorized, "Invalid Header"},
 		{"malformed token", "Bearer invalid", http.StatusUnauthorized, "Invalid Token"},
 		{"unsigned claims", "Bearer " + unsigned, http.StatusUnauthorized, "Invalid Token"},
+		{"refresh token", "Bearer " + pair.RefreshToken, http.StatusUnauthorized, "Invalid Token"},
+		{"untyped token", "Bearer " + legacy, http.StatusUnauthorized, "Invalid Token"},
 		{"missing websocket handshake", "Bearer " + valid, http.StatusBadRequest, "Bad Request"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -232,4 +247,77 @@ func TestHandleWebSocketIgnoresMalformedHeartbeat(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("handler did not process malformed message and close")
 	}
+}
+
+func TestHandleWebSocketRejectsForeignNodeID(t *testing.T) {
+	fleet.Registry.Reset()
+	t.Cleanup(fleet.Registry.Reset)
+	done := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { defer close(done); HandleWebSocket(w, r) }))
+	defer server.Close()
+	token, err := auth.GenerateAgentJWT("attacker-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"Authorization": []string{"Bearer " + token}}
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), header)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"heartbeat","payload":{"mac_address":"victim-node","hostname":"victim"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("handler did not close the impersonating connection")
+	}
+	for _, n := range fleet.Registry.GetNodes() {
+		if n.MacAddress == "victim-node" {
+			t.Fatal("impersonated node was registered")
+		}
+	}
+}
+
+func TestHandleWebSocketBindsNodeToTokenSubject(t *testing.T) {
+	fleet.Registry.Reset()
+	t.Cleanup(fleet.Registry.Reset)
+	server := httptest.NewServer(http.HandlerFunc(HandleWebSocket))
+	defer server.Close()
+	token, err := auth.GenerateAgentJWT("bound-node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"Authorization": []string{"Bearer " + token}}
+	conn, resp, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), header)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	// Two heartbeats on the same connection must keep it registered.
+	for i := 0; i < 2; i++ {
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"heartbeat","payload":{"hostname":"bound"}}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		nodes := fleet.Registry.GetNodes()
+		if len(nodes) == 1 && nodes[0].MacAddress == "bound-node" && nodes[0].Status == "Online" {
+			if err := fleet.Registry.SendCommand("bound-node", models.CommandPayload{ID: "job", Action: "check_updates"}); err != nil {
+				t.Fatalf("connection was not kept registered: %v", err)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("node not registered under token subject: %+v", fleet.Registry.GetNodes())
 }

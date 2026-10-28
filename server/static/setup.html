@@ -323,11 +323,12 @@
                 <div class="step-container" id="step-2">
                     <h3 class="text-xl font-bold mb-2 text-teal-200">Execute Registration</h3>
                     <p class="text-sm text-teal-100/60 mb-6">Run this command on the target server as root/administrator
-                        to securely register the node.</p>
+                        to securely register the node. Set PATCHLI_ADMIN_TOKEN to the server's
+                        ADMIN_TOKEN first; each generated script can register one node only.</p>
 
                     <div class="relative mb-8">
                         <code id="install-command">
-                            curl -sSL "{{.BaseURL}}/api/v1/setup?group=default&os=linux" | sudo bash
+                            curl -sSL -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "{{.BaseURL}}/api/v1/setup?group=default&os=linux" | sudo bash
                         </code>
                         <button onclick="copyCommand()" id="copy-btn"
                             class="absolute top-4 right-4 text-xs bg-teal-500/20 hover:bg-teal-500/40 text-teal-300 px-3 py-1 rounded-md transition-colors">Copy</button>
@@ -387,11 +388,11 @@
             const url = `${baseURL}/api/v1/setup?group=${group}&os=${os}`;
 
             if (os === "windows") {
-                commandCode.innerText = `Invoke-RestMethod -Uri "${url}" | Invoke-Expression`;
+                commandCode.innerText = `Invoke-RestMethod -Uri "${url}" -Headers @{ Authorization = "Bearer $env:PATCHLI_ADMIN_TOKEN" } | Invoke-Expression`;
             } else if (os === "alpine") {
-                commandCode.innerText = `curl -sSL "${url}" | su -c sh`;
+                commandCode.innerText = `curl -sSL -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "${url}" | su -c sh`;
             } else {
-                commandCode.innerText = `curl -sSL "${url}" | sudo bash`;
+                commandCode.innerText = `curl -sSL -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "${url}" | sudo bash`;
             }
         }
 

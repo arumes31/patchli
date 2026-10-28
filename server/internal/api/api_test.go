@@ -41,10 +41,7 @@ func TestHandleSetupSecurity(t *testing.T) {
 			q.Set("group", tt.group)
 			u.RawQuery = q.Encode()
 
-			req, err := http.NewRequest("GET", u.String(), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
+			req := httptest.NewRequest("GET", u.String(), nil)
 
 			rr := httptest.NewRecorder()
 			handler := http.HandlerFunc(HandleSetup)
