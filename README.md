@@ -49,8 +49,12 @@ graph TD
 Agents register themselves securely using an HMAC-signed setup script. Once registered, they receive a persistent JWT for all future communications.
 
 - Each setup script carries a server-generated nonce that can be redeemed **once**, within 10 minutes. Generate a new script per node.
-- Tokens are never issued for a node ID that still holds a valid refresh token. To re-enroll a reinstalled node, wait for its refresh token to expire (7 days) or revoke it in the `refresh_tokens` table.
-- The WebSocket binds the node identity to the access token subject; heartbeats reporting a different node ID are rejected. Refresh tokens are single-use and reuse revokes all tokens of the node.
+- Enrollment claims the node ID. Tokens are never issued again for a claimed node ID, including while its refresh token is being rotated or after reuse revocation. The claim is extended on every refresh and expires 7 days after the last one. To re-enroll a reinstalled node, wait for the claim to expire or revoke it with the admin API:
+  ```bash
+  curl -fsS -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -d '{"mac":"<node-id>"}' https://patch.example.com/api/v1/nodes/revoke
+  ```
+- The WebSocket binds the node identity to the access token subject; heartbeats reporting a different node ID are rejected. Refresh tokens are single-use and reuse revokes all tokens of the node. Enrollment, rotation and revocation are serialized per node, so a replacement issued by a concurrent refresh cannot survive a reuse revocation.
+- The setup page and scripts require an HTTPS `BASE_URL` (plain HTTP only for `localhost`/loopback). The generated install commands pin HTTPS, fail on HTTP errors and do not follow redirects.
 
 ```mermaid
 sequenceDiagram
@@ -90,8 +94,8 @@ sequenceDiagram
 | `PORT` | Listening port for the API and Dashboard | `8080` | No |
 | `JWT_SECRET` | Secret key for signing Agent authentication tokens | - | **Yes** |
 | `REGISTRATION_SECRET` | Secret key for generating HMAC setup signatures | - | **Yes** |
-| `BASE_URL` | External URL of the server (e.g., `https://patch.example.com`). Always set it in production; without it the URL is derived from the request `Host` header | `http://localhost:8080` | No |
-| `ADMIN_TOKEN` | High-entropy bearer token for the admin API (`/api/v1/nodes`, `/api/v1/stats`, `/api/v1/setup`). The admin API returns 401 while unset | - | No |
+| `BASE_URL` | External URL of the server (e.g., `https://patch.example.com`). Always set it in production; without it the URL is derived from the request `Host` header. Must use HTTPS unless the host is loopback | `http://localhost:8080` | No |
+| `ADMIN_TOKEN` | High-entropy bearer token for the admin API (`/api/v1/nodes`, `/api/v1/stats`, `/api/v1/setup`, `/api/v1/nodes/revoke`). The admin API returns 401 while unset | - | No |
 | `TRUSTED_PROXY` | IP of a reverse proxy whose `X-Forwarded-Proto` header is trusted | - | No |
 | `COMMAND_SIGNING_KEY` | Base64 Ed25519 private key (32-byte seed) used to sign agent commands | - | No |
 
@@ -106,20 +110,25 @@ Redis requires `REDIS_PASSWORD`.
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `SERVER_URL` | Control-plane URL, optionally including a path prefix; remote hosts require HTTPS with a certificate trusted by the system | `localhost:8080` |
+| `SERVER_URL` | Control-plane URL, optionally including a path prefix. Requires HTTPS with a certificate trusted by the system | `localhost:8080` |
+| `ALLOW_INSECURE_LOOPBACK` | `true` permits an explicit `http://` loopback `SERVER_URL` for local development. Requires `COMMAND_PUB_KEY` | - |
 | `TRUSTED_PUB_KEY` | Ed25519 public key (Base64) that signs agent release manifests for self-update | - |
 | `COMMAND_PUB_KEY` | Ed25519 public key (Base64) matching the server's `COMMAND_SIGNING_KEY`. When set, the agent only executes commands signed for its own node ID that have not expired | - |
 
-Bare remote host names use HTTPS; the agent uses WSS for the corresponding
-WebSocket connection. Explicit HTTP is accepted only for loopback development
-controllers. Remote deployments previously using plain HTTP must configure TLS
-before updating the agent. Redirects are rejected so credentials and update
-requests cannot be forwarded to another endpoint.
+Bare host names (including `localhost`) use HTTPS; the agent uses WSS for the
+corresponding WebSocket connection. Plain HTTP cannot prove that the listener
+is the controller, so any local process bound to the port would receive the
+agent's tokens. It is therefore refused unless the URL is an explicit
+`http://` loopback address, `ALLOW_INSECURE_LOOPBACK=true` is set and
+`COMMAND_PUB_KEY` is configured; the agent exits at startup otherwise.
+Deployments previously using plain HTTP must configure TLS before updating the
+agent. Redirects are rejected so credentials and update requests cannot be
+forwarded to another endpoint.
 
 #### Command signing
 
 Without `COMMAND_PUB_KEY`, the agent executes every command (including
-pre/post-patch scripts) that its authenticated control plane sends, as
+pre/post-patch scripts) that its TLS-authenticated control plane sends, as
 root/SYSTEM. To limit the impact of a compromised or impersonated control
 plane, generate a key pair, set `COMMAND_SIGNING_KEY` on the server and
 `COMMAND_PUB_KEY` on every agent:

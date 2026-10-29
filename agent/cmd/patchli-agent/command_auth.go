@@ -60,7 +60,8 @@ var (
 
 // verifyCommand enforces command signatures when COMMAND_PUB_KEY is set.
 // Without a key, commands are accepted for backwards compatibility (a warning
-// is logged at startup).
+// is logged at startup); controllerEndpoint only allows that over verified
+// TLS.
 func verifyCommand(cmd CommandPayload, nodeID string, now time.Time) error {
 	if CommandPubKey == "" {
 		return nil
@@ -72,8 +73,8 @@ func verifyCommand(cmd CommandPayload, nodeID string, now time.Time) error {
 	if cmd.Signature == "" {
 		return errors.New("command is not signed")
 	}
-	sig, err := base64.StdEncoding.DecodeString(cmd.Signature)
-	if err != nil {
+	sig, err := base64.StdEncoding.Strict().DecodeString(cmd.Signature)
+	if err != nil || len(sig) != ed25519.SignatureSize {
 		return errors.New("malformed command signature")
 	}
 	msg, err := commandMessage(cmd)
@@ -91,7 +92,10 @@ func verifyCommand(cmd CommandPayload, nodeID string, now time.Time) error {
 		return errors.New("command expired")
 	}
 
-	// Reject replays of the same signed command within its lifetime.
+	// Reject replays of the same signed command within its lifetime. The
+	// cache is keyed by the verified signature bytes, not their text, so an
+	// alternative encoding of a seen signature is still a replay.
+	replayKey := string(sig)
 	seenCommandsMu.Lock()
 	defer seenCommandsMu.Unlock()
 	for k, exp := range seenCommands {
@@ -99,9 +103,9 @@ func verifyCommand(cmd CommandPayload, nodeID string, now time.Time) error {
 			delete(seenCommands, k)
 		}
 	}
-	if _, seen := seenCommands[cmd.Signature]; seen {
+	if _, seen := seenCommands[replayKey]; seen {
 		return errors.New("command replayed")
 	}
-	seenCommands[cmd.Signature] = expires
+	seenCommands[replayKey] = expires
 	return nil
 }

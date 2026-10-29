@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -20,6 +21,10 @@ type LoginRequest struct {
 	Timestamp string `json:"timestamp"`
 	Nonce     string `json:"nonce"`
 	Signature string `json:"signature"`
+}
+
+type RevokeRequest struct {
+	MAC string `json:"mac"`
 }
 
 type RefreshRequest struct {
@@ -52,41 +57,28 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Never hand out tokens for a node ID that is already enrolled; otherwise
-	// a registration signature could be used to take over an existing node.
-	// A reinstalled node must wait for its old refresh token to expire or have
-	// it revoked by an operator.
-	enrolled, err := db.HasActiveRefreshToken(req.MAC)
-	if err != nil {
-		http.Error(w, "Failed to check enrollment", http.StatusInternalServerError)
-		return
-	}
-	if enrolled {
-		http.Error(w, "Node is already enrolled", http.StatusConflict)
-		return
-	}
-
-	// Each registration nonce can be redeemed exactly once.
-	fresh, err := db.ConsumeRegistrationNonce(req.Nonce, t.Add(10*time.Minute))
-	if err != nil {
-		http.Error(w, "Failed to record registration", http.StatusInternalServerError)
-		return
-	}
-	if !fresh {
-		http.Error(w, "Registration signature already used", http.StatusUnauthorized)
-		return
-	}
-
 	pair, err := auth.GenerateTokenPair(req.MAC)
 	if err != nil {
 		http.Error(w, "Failed to generate tokens", http.StatusInternalServerError)
 		return
 	}
 
-	// Store refresh token in DB
+	// Claim the node ID, redeem the nonce and store the refresh token as one
+	// step. A node ID that is already enrolled is never handed out again, even
+	// while its refresh token is being rotated; otherwise a registration grant
+	// could take over an existing node. A reinstalled node must wait for the
+	// old enrollment to expire or have it revoked by an operator.
 	expiresAt := time.Now().Add(auth.RefreshTokenDuration)
-	if err := db.StoreRefreshToken(req.MAC, pair.RefreshToken, expiresAt); err != nil {
-		http.Error(w, "Failed to store refresh token", http.StatusInternalServerError)
+	switch err := db.EnrollNode(req.MAC, req.Nonce, t.Add(10*time.Minute), pair.RefreshToken, expiresAt); {
+	case errors.Is(err, db.ErrAlreadyEnrolled):
+		http.Error(w, "Node is already enrolled", http.StatusConflict)
+		return
+	case errors.Is(err, db.ErrNonceUsed):
+		http.Error(w, "Registration signature already used", http.StatusUnauthorized)
+		return
+	case err != nil:
+		log.Printf("Failed to enroll node: %v", err)
+		http.Error(w, "Failed to record enrollment", http.StatusInternalServerError)
 		return
 	}
 
@@ -122,36 +114,25 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Token rotation: atomically consume the old token so it can be redeemed
-	// at most once.
-	consumed, err := db.ConsumeRefreshToken(req.MAC, req.RefreshToken)
-	if err != nil {
-		log.Printf("Failed to rotate refresh token: %v", err)
-		http.Error(w, "Failed to rotate refresh token", http.StatusInternalServerError)
-		return
-	}
-	if !consumed {
-		// A correctly signed, unexpired refresh token that is no longer stored
-		// has already been rotated: treat it as token theft and revoke every
-		// refresh token of the node.
-		if err := db.DeleteAllRefreshTokens(req.MAC); err != nil {
-			log.Printf("Failed to revoke refresh tokens after reuse: %v", err)
-		}
-		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
-		return
-	}
-
-	// Generate new pair
 	pair, err := auth.GenerateTokenPair(req.MAC)
 	if err != nil {
 		http.Error(w, "Failed to generate new tokens", http.StatusInternalServerError)
 		return
 	}
 
-	// Store new refresh token
+	// Token rotation: the old token is redeemed at most once. A correctly
+	// signed, unexpired refresh token that is no longer stored has already
+	// been rotated, so it is treated as theft and every refresh token of the
+	// node is revoked, including replacements issued by concurrent requests.
 	expiresAt := time.Now().Add(auth.RefreshTokenDuration)
-	if err := db.StoreRefreshToken(req.MAC, pair.RefreshToken, expiresAt); err != nil {
-		http.Error(w, "Failed to store new refresh token", http.StatusInternalServerError)
+	rotated, err := db.RotateRefreshToken(req.MAC, req.RefreshToken, pair.RefreshToken, expiresAt)
+	if err != nil {
+		log.Printf("Failed to rotate refresh token: %v", err)
+		http.Error(w, "Failed to rotate refresh token", http.StatusInternalServerError)
+		return
+	}
+	if !rotated {
+		http.Error(w, "Invalid or expired refresh token", http.StatusUnauthorized)
 		return
 	}
 
@@ -165,4 +146,27 @@ func HandleAgentRefresh(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(buf.Bytes()); err != nil {
 		log.Printf("Response write failed: %v", err)
 	}
+}
+
+// HandleRevokeEnrollment lets an operator release a node's enrollment and
+// revoke its refresh tokens so a reinstalled node can enroll again.
+func HandleRevokeEnrollment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req RevokeRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MAC == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.RevokeEnrollment(req.MAC); err != nil {
+		log.Printf("Failed to revoke enrollment: %v", err)
+		http.Error(w, "Failed to revoke enrollment", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

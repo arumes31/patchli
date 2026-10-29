@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -27,7 +28,10 @@ var validGroupRegex = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
 // not configured.
 var validHostRegex = regexp.MustCompile(`^([a-zA-Z0-9.-]+|\[[0-9a-fA-F:.]+\])(:[0-9]{1,5})?$`)
 
-var errInvalidBaseURL = errors.New("invalid base URL")
+var (
+	errInvalidBaseURL  = errors.New("invalid base URL")
+	errInsecureBaseURL = errors.New("base URL must use HTTPS for non-loopback hosts")
+)
 
 func isValidGroupName(group string) bool {
 	return validGroupRegex.MatchString(group)
@@ -58,7 +62,21 @@ func resolveBaseURL(r *http.Request) (string, error) {
 	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") || parsedURL.Host == "" {
 		return "", errInvalidBaseURL
 	}
+	// Generated install commands pipe the downloaded script into a privileged
+	// shell, so remote origins must be authenticated with TLS. Plain HTTP is
+	// only acceptable for a controller on the same host.
+	if parsedURL.Scheme == "http" && !isLoopbackHost(parsedURL.Hostname()) {
+		return "", errInsecureBaseURL
+	}
 	return baseURL, nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func HandleNodes(w http.ResponseWriter, r *http.Request) {
@@ -121,7 +139,7 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 
 	baseURL, err := resolveBaseURL(r)
 	if err != nil {
-		log.Printf("Invalid BaseURL rejected for setup script: %q", r.Host) // #nosec G706 -- %q escapes control characters.
+		log.Printf("BaseURL rejected for setup script (host %q): %v", r.Host, err) // #nosec G706 -- %q escapes control characters.
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}
@@ -154,7 +172,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	}
 	baseURL, err := resolveBaseURL(r)
 	if err != nil {
-		log.Printf("Invalid BaseURL rejected for host %q", r.Host) // #nosec G706 -- %q escapes control characters.
+		log.Printf("BaseURL rejected for host %q: %v", r.Host, err) // #nosec G706 -- %q escapes control characters.
 		http.Error(w, "Invalid server configuration", http.StatusInternalServerError)
 		return
 	}

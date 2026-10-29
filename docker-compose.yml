@@ -21,6 +21,7 @@ services:
       - COMMAND_SIGNING_KEY=${COMMAND_SIGNING_KEY:-}
       - TRUSTED_PROXY=${TRUSTED_PROXY:-}
       - PORT=${PORT:-8080}
+      # Must be HTTPS unless it points at localhost/loopback.
       - BASE_URL=${BASE_URL:-http://localhost:8080}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
       - TEAMS_WEBHOOK_URL=${TEAMS_WEBHOOK_URL:-}
@@ -37,7 +38,7 @@ services:
       context: ./agent
       dockerfile: Dockerfile
     environment:
-      # Required
+      # Required. HTTPS with a trusted certificate (e.g. via a TLS reverse proxy).
       - SERVER_URL=${SERVER_URL:-server:8080}
       # Optional
       - TRUSTED_PUB_KEY=${TRUSTED_PUB_KEY:-}

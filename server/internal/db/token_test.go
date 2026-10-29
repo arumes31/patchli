@@ -92,33 +92,163 @@ func TestInvalidDatabaseConfiguration(t *testing.T) {
 	}
 }
 
-func TestConsumeRefreshToken(t *testing.T) {
+func tokenDatabase(t *testing.T) sqlmock.Sqlmock {
+	t.Helper()
 	connection, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
 	}
 	previous := DB
 	DB = connection
-	t.Cleanup(func() { DB = previous; _ = connection.Close() })
-	token := "opaque-refresh-credential"
-	sum := sha256.Sum256([]byte(token))
-	hash := hex.EncodeToString(sum[:])
-	for _, rows := range []int64{1, 0} {
-		mock.ExpectExec("DELETE FROM refresh_tokens WHERE mac_address = \\$1 AND token_hash = \\$2 AND expires_at").WithArgs("node", hash).WillReturnResult(sqlmock.NewResult(0, rows))
-		got, err := ConsumeRefreshToken("node", token)
-		if err != nil || got != (rows == 1) {
-			t.Fatalf("ConsumeRefreshToken = %v, %v; rows %d", got, err, rows)
+	t.Cleanup(func() {
+		DB = previous
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Error(err)
 		}
+		_ = connection.Close()
+	})
+	return mock
+}
+
+func digest(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func expectNodeLock(mock sqlmock.Sqlmock, mac string) {
+	mock.ExpectBegin()
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("patchli-node:" + mac).WillReturnResult(sqlmock.NewResult(0, 0))
+}
+
+func TestEnrollNode(t *testing.T) {
+	expires := time.Now().Add(time.Hour)
+	nonceExpires := time.Now().Add(time.Minute)
+	t.Run("claims node", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectQuery(`SELECT EXISTS\(SELECT 1 FROM node_enrollments`).WithArgs("node").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+		mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("INSERT INTO registration_nonces").WithArgs(digest("nonce"), nonceExpires).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO node_enrollments").WithArgs("node", expires).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO refresh_tokens").WithArgs("node", digest("token"), expires).WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectCommit()
+		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("already enrolled keeps nonce", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectQuery("SELECT EXISTS").WithArgs("node").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+		mock.ExpectRollback()
+		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); !errors.Is(err, ErrAlreadyEnrolled) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("nonce reused", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectQuery("SELECT EXISTS").WithArgs("node").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+		mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("INSERT INTO registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectRollback()
+		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); !errors.Is(err, ErrNonceUsed) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("storage failure rolls back", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectQuery("SELECT EXISTS").WithArgs("node").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+		mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec("INSERT INTO registration_nonces").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO node_enrollments").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO refresh_tokens").WillReturnError(sql.ErrConnDone)
+		mock.ExpectRollback()
+		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); !errors.Is(err, sql.ErrConnDone) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+	t.Run("lock failure", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		mock.ExpectBegin()
+		mock.ExpectExec("SELECT pg_advisory_xact_lock").WillReturnError(sql.ErrConnDone)
+		mock.ExpectRollback()
+		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); !errors.Is(err, sql.ErrConnDone) {
+			t.Fatalf("err = %v", err)
+		}
+	})
+}
+
+func TestEnrollNodeWithoutDatabase(t *testing.T) {
+	previous := DB
+	DB = nil
+	t.Cleanup(func() { DB = previous })
+	expires := time.Now().Add(time.Hour)
+	nonceExpires := time.Now().Add(time.Minute)
+	if err := EnrollNode("memory-node", "memory-enroll-1", nonceExpires, "token", expires); err != nil {
+		t.Fatal(err)
 	}
-	mock.ExpectExec("DELETE FROM refresh_tokens").WillReturnError(sql.ErrConnDone)
-	if _, err := ConsumeRefreshToken("node", token); !errors.Is(err, sql.ErrConnDone) {
-		t.Fatalf("lost consume error: %v", err)
+	// The claim survives without any stored refresh token.
+	if err := EnrollNode("memory-node", "memory-enroll-2", nonceExpires, "token", expires); !errors.Is(err, ErrAlreadyEnrolled) {
+		t.Fatalf("takeover accepted: %v", err)
 	}
-	mock.ExpectQuery("SELECT EXISTS").WithArgs("node").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-	if active, err := HasActiveRefreshToken("node"); err != nil || !active {
-		t.Fatalf("HasActiveRefreshToken = %v, %v", active, err)
+	if err := EnrollNode("memory-other", "memory-enroll-1", nonceExpires, "token", expires); !errors.Is(err, ErrNonceUsed) {
+		t.Fatalf("nonce replay accepted: %v", err)
 	}
-	if err := mock.ExpectationsWereMet(); err != nil {
+	if err := RevokeEnrollment("memory-node"); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnrollNode("memory-node", "memory-enroll-3", nonceExpires, "token", expires); err != nil {
+		t.Fatalf("re-enrollment after revocation: %v", err)
+	}
+	if _, err := RotateRefreshToken("memory-node", "old", "new", expires); err == nil {
+		t.Fatal("rotation must fail closed without a database")
+	}
+}
+
+func TestRotateRefreshToken(t *testing.T) {
+	expires := time.Now().Add(time.Hour)
+	t.Run("rotates and extends enrollment", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectExec(`DELETE FROM refresh_tokens WHERE mac_address = \$1 AND token_hash = \$2 AND expires_at`).WithArgs("node", digest("old")).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO refresh_tokens").WithArgs("node", digest("new"), expires).WillReturnResult(sqlmock.NewResult(1, 1))
+		mock.ExpectExec("INSERT INTO node_enrollments").WithArgs("node", expires).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectCommit()
+		if ok, err := RotateRefreshToken("node", "old", "new", expires); err != nil || !ok {
+			t.Fatalf("RotateRefreshToken = %v, %v", ok, err)
+		}
+	})
+	t.Run("reuse revokes node", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectExec(`DELETE FROM refresh_tokens WHERE mac_address = \$1 AND token_hash`).WillReturnResult(sqlmock.NewResult(0, 0))
+		mock.ExpectExec(`DELETE FROM refresh_tokens WHERE mac_address = \$1$`).WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 2))
+		mock.ExpectCommit()
+		if ok, err := RotateRefreshToken("node", "old", "new", expires); err != nil || ok {
+			t.Fatalf("RotateRefreshToken = %v, %v", ok, err)
+		}
+	})
+	t.Run("storage failure rolls back", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		expectNodeLock(mock, "node")
+		mock.ExpectExec("DELETE FROM refresh_tokens").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO refresh_tokens").WillReturnError(sql.ErrConnDone)
+		mock.ExpectRollback()
+		if ok, err := RotateRefreshToken("node", "old", "new", expires); !errors.Is(err, sql.ErrConnDone) || ok {
+			t.Fatalf("RotateRefreshToken = %v, %v", ok, err)
+		}
+	})
+}
+
+func TestRevokeEnrollment(t *testing.T) {
+	mock := tokenDatabase(t)
+	expectNodeLock(mock, "node")
+	mock.ExpectExec("DELETE FROM refresh_tokens").WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("DELETE FROM node_enrollments").WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := RevokeEnrollment("node"); err != nil {
 		t.Fatal(err)
 	}
 }
