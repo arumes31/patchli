@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"os"
@@ -103,9 +104,25 @@ func main() {
 		MaxHeaderBytes:    1 << 20,
 	}
 
+	// Agents require a TLS-authenticated controller. Terminate TLS here or in
+	// a reverse proxy in front of the server.
+	certFile, keyFile := os.Getenv("TLS_CERT_FILE"), os.Getenv("TLS_KEY_FILE")
+	if (certFile == "") != (keyFile == "") {
+		log.Fatal("TLS_CERT_FILE and TLS_KEY_FILE must be set together")
+	}
+	if certFile != "" {
+		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	go func() {
-		log.Printf("Server listening on port %q", port) // #nosec G706 -- %q escapes control characters.
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Printf("Server listening on port %q (TLS: %t)", port, certFile != "") // #nosec G706 -- %q escapes control characters.
+		var err error
+		if certFile != "" {
+			err = srv.ListenAndServeTLS(certFile, keyFile)
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}()
