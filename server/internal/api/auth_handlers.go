@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/arumes31/patchli/server/internal/auth"
@@ -14,6 +15,10 @@ import (
 
 // maxAuthBodyBytes caps login/refresh request bodies.
 const maxAuthBodyBytes = 64 << 10
+
+// validNodeID matches agent node IDs (UUIDs) and MAC addresses within the
+// 50 characters that nodes.mac_address stores.
+var validNodeID = regexp.MustCompile(`^[A-Za-z0-9:._-]{1,50}$`)
 
 type LoginRequest struct {
 	MAC       string `json:"mac"`
@@ -40,7 +45,7 @@ func HandleAgentLogin(w http.ResponseWriter, r *http.Request) {
 
 	var req LoginRequest
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MAC == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validNodeID.MatchString(req.MAC) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -158,7 +163,7 @@ func HandleRevokeEnrollment(w http.ResponseWriter, r *http.Request) {
 
 	var req RevokeRequest
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.MAC == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validNodeID.MatchString(req.MAC) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}

@@ -112,7 +112,6 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	})
 
 	var registered bool
-	var lastOS string
 
 	// markOffline only cleans up if this connection still owns the node ID;
 	// a newer connection for the same node may have replaced it.
@@ -121,7 +120,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("Agent %q disconnected", nodeID) // #nosec G706 -- %q escapes control characters.
-		if err := db.UpdateNodeStatus(nodeID, "", "", lastOS, "", "offline"); err != nil {
+		if err := db.MarkNodeOffline(nodeID); err != nil {
 			log.Printf("Failed to update node status for %q on disconnect: %v", nodeID, err) // #nosec G706 -- %q escapes control characters.
 		}
 	}
@@ -159,7 +158,6 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			p.MacAddress = nodeID
-			lastOS = p.OSVersion
 			fleet.Registry.Register(nodeID, conn, p)
 			registered = true
 

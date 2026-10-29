@@ -168,6 +168,29 @@ func TestHandleRevokeEnrollment(t *testing.T) {
 	}
 }
 
+func TestAuthHandlersRejectInvalidNodeIDs(t *testing.T) {
+	for _, mac := range []string{"", strings.Repeat("a", 51), "node id", "node\nforged", "node/../x"} {
+		login, err := json.Marshal(signedLogin(mac, time.Now().Format(time.RFC3339)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rr := httptest.NewRecorder()
+		HandleAgentLogin(rr, httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(login)))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("login with node ID %q: status=%d", mac, rr.Code)
+		}
+		revoke, err := json.Marshal(RevokeRequest{MAC: mac})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rr = httptest.NewRecorder()
+		HandleRevokeEnrollment(rr, httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(revoke)))
+		if rr.Code != http.StatusBadRequest {
+			t.Errorf("revoke with node ID %q: status=%d", mac, rr.Code)
+		}
+	}
+}
+
 func TestHandleAgentLoginRejectsOversizedBody(t *testing.T) {
 	body := `{"mac":"` + strings.Repeat("a", maxAuthBodyBytes) + `"}`
 	rr := httptest.NewRecorder()
@@ -242,6 +265,7 @@ func TestHandleAgentLoginStorageFailure(t *testing.T) {
 	mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectExec("INSERT INTO registration_nonces").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO node_enrollments").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO nodes").WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO refresh_tokens").WithArgs("node", sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnError(errors.New("storage unavailable"))
 	mock.ExpectRollback()
 	timestamp := time.Now().Format(time.RFC3339)

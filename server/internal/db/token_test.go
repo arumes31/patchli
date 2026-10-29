@@ -130,6 +130,7 @@ func TestEnrollNode(t *testing.T) {
 		mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec("INSERT INTO registration_nonces").WithArgs(digest("nonce"), nonceExpires).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec("INSERT INTO node_enrollments").WithArgs("node", expires).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO nodes").WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec("INSERT INTO refresh_tokens").WithArgs("node", digest("token"), expires).WillReturnResult(sqlmock.NewResult(1, 1))
 		mock.ExpectCommit()
 		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); err != nil {
@@ -163,6 +164,7 @@ func TestEnrollNode(t *testing.T) {
 		mock.ExpectExec("DELETE FROM registration_nonces").WillReturnResult(sqlmock.NewResult(0, 0))
 		mock.ExpectExec("INSERT INTO registration_nonces").WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec("INSERT INTO node_enrollments").WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec("INSERT INTO nodes").WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec("INSERT INTO refresh_tokens").WillReturnError(sql.ErrConnDone)
 		mock.ExpectRollback()
 		if err := EnrollNode("node", "nonce", nonceExpires, "token", expires); !errors.Is(err, sql.ErrConnDone) {
@@ -240,6 +242,20 @@ func TestRotateRefreshToken(t *testing.T) {
 			t.Fatalf("RotateRefreshToken = %v, %v", ok, err)
 		}
 	})
+}
+
+func TestMarkNodeOffline(t *testing.T) {
+	mock := tokenDatabase(t)
+	mock.ExpectExec(`UPDATE nodes SET status = 'offline' WHERE mac_address = \$1`).WithArgs("node").WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := MarkNodeOffline("node"); err != nil {
+		t.Fatal(err)
+	}
+	previous := DB
+	DB = nil
+	defer func() { DB = previous }()
+	if err := MarkNodeOffline("node"); err == nil {
+		t.Fatal("expected unavailable database")
+	}
 }
 
 func TestRevokeEnrollment(t *testing.T) {

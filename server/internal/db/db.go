@@ -94,6 +94,16 @@ func UpdateNodeStatus(mac string, hostname string, osName string, osVersion stri
 	return err
 }
 
+// MarkNodeOffline sets a node's status to offline without touching the
+// details reported by its last heartbeat.
+func MarkNodeOffline(mac string) error {
+	if DB == nil {
+		return errors.New("database not initialized")
+	}
+	_, err := DB.Exec("UPDATE nodes SET status = 'offline' WHERE mac_address = $1", mac)
+	return err
+}
+
 // IsJobRunning checks if a job is still in 'running' state.
 func IsJobRunning(jobID string) (bool, error) {
 	if DB == nil {
@@ -245,6 +255,12 @@ func EnrollNode(mac, nonce string, nonceExpiresAt time.Time, refreshToken string
 		}
 		if _, err := tx.Exec(`INSERT INTO node_enrollments (mac_address, enrolled_at, expires_at) VALUES ($1, CURRENT_TIMESTAMP, $2)
 			ON CONFLICT (mac_address) DO UPDATE SET enrolled_at = EXCLUDED.enrolled_at, expires_at = EXCLUDED.expires_at`, mac, expiresAt); err != nil {
+			return err
+		}
+		// refresh_tokens references nodes; the first heartbeat fills in the
+		// placeholder hostname and the node details.
+		if _, err := tx.Exec(`INSERT INTO nodes (hostname, mac_address, status) VALUES ($1, $1, 'enrolled')
+			ON CONFLICT (mac_address) DO NOTHING`, mac); err != nil {
 			return err
 		}
 		_, err = tx.Exec("INSERT INTO refresh_tokens (mac_address, token_hash, expires_at) VALUES ($1, $2, $3)", mac, hashToken(refreshToken), expiresAt)

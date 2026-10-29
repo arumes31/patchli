@@ -20,6 +20,11 @@ services:
       # Base64 Ed25519 key used to sign agent commands (see README).
       - COMMAND_SIGNING_KEY=${COMMAND_SIGNING_KEY:-}
       - TRUSTED_PROXY=${TRUSTED_PROXY:-}
+      # Serve HTTPS directly (agents require TLS); paths inside the container,
+      # e.g. /app/data/tls/server.crt. The certificate must cover the host
+      # name agents use in SERVER_URL.
+      - TLS_CERT_FILE=${TLS_CERT_FILE:-}
+      - TLS_KEY_FILE=${TLS_KEY_FILE:-}
       - PORT=${PORT:-8080}
       # Must be HTTPS unless it points at localhost/loopback.
       - BASE_URL=${BASE_URL:-http://localhost:8080}

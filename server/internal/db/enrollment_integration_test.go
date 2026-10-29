@@ -20,10 +20,8 @@ func TestMigrationsEnrollmentLifecycle(t *testing.T) {
 	DB = conn
 	t.Cleanup(func() { DB = previous })
 
-	const mac = "00:11:22:33:44:55"
-	if _, err := conn.Exec(`INSERT INTO nodes (hostname, mac_address) VALUES ('node', $1)`, mac); err != nil {
-		t.Fatal(err)
-	}
+	// Agents identify with a UUID and have no nodes row before enrolling.
+	const mac = "5f0c2a9e-4b7d-4e61-9a43-0d8e6f1b2c3d"
 	expires := time.Now().Add(time.Hour)
 	nonceExpires := time.Now().Add(10 * time.Minute)
 	countTokens := func() int {
@@ -64,6 +62,21 @@ func TestMigrationsEnrollmentLifecycle(t *testing.T) {
 	}
 	if n := countTokens(); n != 1 {
 		t.Fatalf("%d refresh tokens after enrollment, want 1", n)
+	}
+	var status string
+	if err := conn.QueryRow(`SELECT status FROM nodes WHERE mac_address = $1`, mac).Scan(&status); err != nil || status != "enrolled" {
+		t.Fatalf("placeholder node status %q err=%v", status, err)
+	}
+	// The first heartbeat replaces the placeholder; going offline keeps it.
+	if err := UpdateNodeStatus(mac, "host-1", "linux", "6.1", "6.1.0", "online"); err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkNodeOffline(mac); err != nil {
+		t.Fatal(err)
+	}
+	var hostname string
+	if err := conn.QueryRow(`SELECT hostname, status FROM nodes WHERE mac_address = $1`, mac).Scan(&hostname, &status); err != nil || hostname != "host-1" || status != "offline" {
+		t.Fatalf("node after disconnect: hostname=%q status=%q err=%v", hostname, status, err)
 	}
 	// Normalize the winner's token for the rest of the test.
 	if _, err := conn.Exec(`UPDATE refresh_tokens SET token_hash = $2 WHERE mac_address = $1`, mac, hashToken("token-1")); err != nil {
