@@ -385,14 +385,20 @@
         function updateCommand() {
             const os = osSelect.value;
             const group = groupSelect.value;
-            const url = `${baseURL}/api/v1/setup?group=${group}&os=${os}`;
+            const url = `${baseURL}/api/v1/setup?group=${encodeURIComponent(group)}&os=${encodeURIComponent(os)}`;
+            // The server only renders plain HTTP origins for loopback hosts.
+            // Remote installs pin HTTPS, fail on HTTP errors instead of piping
+            // an error page into a shell, and never follow redirects.
+            const curl = baseURL.startsWith("https://")
+                ? `curl --proto '=https' --tlsv1.2 -fsS`
+                : `curl -fsS`;
 
             if (os === "windows") {
-                commandCode.innerText = `Invoke-RestMethod -Uri "${url}" -Headers @{ Authorization = "Bearer $env:PATCHLI_ADMIN_TOKEN" } | Invoke-Expression`;
+                commandCode.innerText = `Invoke-RestMethod -Uri "${url}" -MaximumRedirection 0 -Headers @{ Authorization = "Bearer $env:PATCHLI_ADMIN_TOKEN" } | Invoke-Expression`;
             } else if (os === "alpine") {
-                commandCode.innerText = `curl -sSL -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "${url}" | su -c sh`;
+                commandCode.innerText = `${curl} -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "${url}" | su -c sh`;
             } else {
-                commandCode.innerText = `curl -sSL -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "${url}" | sudo bash`;
+                commandCode.innerText = `${curl} -H "Authorization: Bearer $PATCHLI_ADMIN_TOKEN" "${url}" | sudo bash`;
             }
         }
 

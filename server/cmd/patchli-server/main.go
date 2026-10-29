@@ -72,6 +72,7 @@ func main() {
 	mux.HandleFunc("/api/v1/nodes", api.AuthMiddleware(api.HandleNodes))
 	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
 	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
+	mux.HandleFunc("/api/v1/nodes/revoke", api.AuthMiddleware(api.HandleRevokeEnrollment))
 
 	// Agent Auth (rate limited per client IP)
 	authLimiter := api.NewRateLimiter(30, time.Minute)

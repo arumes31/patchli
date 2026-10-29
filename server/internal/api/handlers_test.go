@@ -137,6 +137,7 @@ func TestHandleSetup(t *testing.T) {
 		query          string
 		header         map[string]string
 		env            map[string]string
+		host           string
 		useTLS         bool
 		expectedInBody []string
 		expectedStatus int
@@ -178,6 +179,18 @@ func TestHandleSetup(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name:           "Remote HTTP BASE_URL rejected",
+			query:          "group=test",
+			env:            map[string]string{"BASE_URL": "http://patchli.example.com"},
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
+			name:           "Remote HTTP host rejected",
+			query:          "group=test",
+			host:           "patchli.example.com",
+			expectedStatus: http.StatusInternalServerError,
+		},
+		{
 			name:           "X-Forwarded-Proto https",
 			query:          "group=test",
 			header:         map[string]string{"X-Forwarded-Proto": "https"},
@@ -201,7 +214,11 @@ func TestHandleSetup(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			req := httptest.NewRequest("GET", "/api/v1/setup?"+tt.query, nil)
+			// Plain HTTP setup origins are only accepted for loopback hosts.
+			req := httptest.NewRequest("GET", "http://localhost/api/v1/setup?"+tt.query, nil)
+			if tt.host != "" {
+				req.Host = tt.host
+			}
 
 			if tt.useTLS {
 				req.TLS = &tls.ConnectionState{}
@@ -240,7 +257,7 @@ func TestServeSetupUI(t *testing.T) {
 	setupHandlers(t)
 
 	t.Run("Default", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/setup", nil)
+		req := httptest.NewRequest("GET", "http://localhost/setup", nil)
 
 		rr := httptest.NewRecorder()
 		ServeSetupUI(rr, req)
@@ -255,7 +272,7 @@ func TestServeSetupUI(t *testing.T) {
 	})
 
 	t.Run("With BASE_URL", func(t *testing.T) {
-		t.Setenv("BASE_URL", "http://custom.base.url")
+		t.Setenv("BASE_URL", "https://custom.base.url")
 
 		req := httptest.NewRequest("GET", "/setup", nil)
 
@@ -265,10 +282,24 @@ func TestServeSetupUI(t *testing.T) {
 		if status := rr.Code; status != http.StatusOK {
 			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
 		}
+		if body := rr.Body.String(); !strings.Contains(body, "--proto") {
+			t.Error("HTTPS install command should pin the protocol")
+		}
+	})
+
+	t.Run("Rejects remote HTTP BASE_URL", func(t *testing.T) {
+		t.Setenv("BASE_URL", "http://custom.base.url")
+
+		rr := httptest.NewRecorder()
+		ServeSetupUI(rr, httptest.NewRequest("GET", "/setup", nil))
+
+		if status := rr.Code; status != http.StatusInternalServerError {
+			t.Errorf("remote HTTP origin accepted: got %v", status)
+		}
 	})
 
 	t.Run("With X-Forwarded-Proto", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/setup", nil)
+		req := httptest.NewRequest("GET", "http://localhost/setup", nil)
 		req.Header.Set("X-Forwarded-Proto", "https")
 
 		rr := httptest.NewRecorder()
@@ -347,10 +378,13 @@ func TestSetupURLTrust(t *testing.T) {
 		name, base, proxy, remote, proto, want string
 		status                                 int
 	}{
-		{"untrusted forwarded header", "", "192.0.2.1", "192.0.2.2:1234", "https", "http://controller.example", http.StatusOK},
+		{"untrusted forwarded header", "", "192.0.2.1", "192.0.2.2:1234", "https", "Invalid server configuration", http.StatusInternalServerError},
 		{"trusted forwarded header", "", "192.0.2.1", "192.0.2.1:1234", "HTTPS", "https://controller.example", http.StatusOK},
 		{"trusted without port", "", "192.0.2.1", "192.0.2.1", "https", "https://controller.example", http.StatusOK},
-		{"trusted unsupported protocol", "", "192.0.2.1", "192.0.2.1:1234", "ftp", "http://controller.example", http.StatusOK},
+		{"trusted unsupported protocol", "", "192.0.2.1", "192.0.2.1:1234", "ftp", "Invalid server configuration", http.StatusInternalServerError},
+		{"loopback http base", "http://127.0.0.1:8080", "", "", "", "http://127.0.0.1:8080", http.StatusOK},
+		{"ipv6 loopback http base", "http://[::1]:8080", "", "", "", "http://[::1]:8080", http.StatusOK},
+		{"remote http base", "http://controller.example", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
 		{"invalid scheme", "javascript:alert(1)", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
 		{"malformed url", "http://%", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
 		{"injected host header", "", "", "", "", "Invalid server configuration", http.StatusInternalServerError},
@@ -396,7 +430,7 @@ func TestHandlersDisconnectedClient(t *testing.T) {
 			w := &failingResponseWriter{header: make(http.Header)}
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			req := httptest.NewRequest(http.MethodGet, "http://controller.example/", nil).WithContext(ctx)
+			req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil).WithContext(ctx)
 			tc.handler(w, req)
 			if w.writes == 0 {
 				t.Fatal("handler did not attempt response")

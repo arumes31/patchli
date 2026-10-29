@@ -270,6 +270,11 @@ func RunAgent(ctx context.Context) {
 	if serverURL == "" {
 		serverURL = "localhost:8080"
 	}
+	// Refuse to start rather than send credentials to, or take commands from,
+	// a controller whose identity cannot be established.
+	if _, err := controllerEndpoint(serverURL, ""); err != nil {
+		log.Fatalf("Invalid controller configuration: %v", err)
+	}
 
 	// Auth: load existing tokens
 	var tokens *TokenPair
@@ -332,9 +337,11 @@ func RunAgent(ctx context.Context) {
 					log.Printf("Command unmarshal error: %v", err)
 					continue
 				}
-				log.Printf("Received command: %s (Job: %s)", cmd.Action, cmd.ID)
+				// Command fields are untrusted until verified; %q escapes
+				// control characters so they cannot forge log lines.
+				log.Printf("Received command: %q (Job: %q)", cmd.Action, cmd.ID)
 				if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
-					log.Printf("Rejected command %s: %v", cmd.ID, err)
+					log.Printf("Rejected command %q: %v", cmd.ID, err)
 					continue
 				}
 				go executeCommand(ctx, pm, cmd)
@@ -446,9 +453,9 @@ func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater
 			if err := json.NewDecoder(io.LimitReader(resp.Body, maxCommandBytes)).Decode(&cmd); err == nil && cmd.Action != "" {
 				if tokens == nil {
 					// Never act on commands from an unauthenticated session.
-					log.Printf("Ignoring command %s: agent is not authenticated", cmd.ID)
+					log.Printf("Ignoring command %q: agent is not authenticated", cmd.ID)
 				} else if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
-					log.Printf("Rejected command %s: %v", cmd.ID, err)
+					log.Printf("Rejected command %q: %v", cmd.ID, err)
 				} else {
 					go executeCommand(ctx, pm, cmd)
 				}
@@ -477,7 +484,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 
 	if cmd.Action == "apply_updates" {
 		if err := pm.PreFlightCheck(ctx); err != nil {
-			log.Printf("PreFlight Check Failed for Job %s: %v", cmd.ID, err)
+			log.Printf("PreFlight Check Failed for Job %q: %v", cmd.ID, err)
 			return
 		}
 
@@ -520,7 +527,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 		log.Printf("CHAOS MONKEY: Restarting agent...")
 		os.Exit(1)
 	default:
-		log.Printf("Unknown action: %s", cmd.Action)
+		log.Printf("Unknown action: %q", cmd.Action)
 		return
 	}
 
@@ -546,7 +553,7 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 		}
 	}
 
-	log.Printf("Job %s finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
+	log.Printf("Job %q finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
 }
 
 // agentManifest describes a signed agent release. The Ed25519 signature

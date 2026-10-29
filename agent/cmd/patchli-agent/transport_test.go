@@ -2,12 +2,57 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
+// allowLoopbackHTTP opts into plain HTTP loopback controllers for tests that
+// use httptest.NewServer; that requires a command verification key.
+func allowLoopbackHTTP(t *testing.T) {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldAllow, oldKey := AllowInsecureLoopback, CommandPubKey
+	t.Cleanup(func() { AllowInsecureLoopback, CommandPubKey = oldAllow, oldKey })
+	AllowInsecureLoopback = true
+	CommandPubKey = base64.StdEncoding.EncodeToString(pub)
+}
+
+func TestControllerEndpointPlainHTTPRequiresOptInAndSigning(t *testing.T) {
+	oldAllow, oldKey := AllowInsecureLoopback, CommandPubKey
+	t.Cleanup(func() { AllowInsecureLoopback, CommandPubKey = oldAllow, oldKey })
+	for _, tc := range []struct {
+		name  string
+		allow bool
+		key   string
+		want  string
+	}{
+		{"default", false, "key", "ALLOW_INSECURE_LOOPBACK"},
+		{"unsigned commands", true, "", "COMMAND_PUB_KEY"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			AllowInsecureLoopback, CommandPubKey = tc.allow, tc.key
+			_, err := controllerEndpoint("http://127.0.0.1:8080", "/ws")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("plain HTTP accepted or wrong reason: %v", err)
+			}
+			// HTTPS is never affected by the loopback opt-in.
+			if _, err := controllerEndpoint("https://127.0.0.1:8080", "/ws"); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestControllerEndpointPolicy(t *testing.T) {
+	allowLoopbackHTTP(t)
 	for _, tt := range []struct {
 		input, path, want string
 		fail              bool
@@ -15,7 +60,7 @@ func TestControllerEndpointPolicy(t *testing.T) {
 		{"example.com:8443", "/api/v1/poll", "https://example.com:8443/api/v1/poll", false},
 		{"https://example.com/patchli/", "/ws", "https://example.com/patchli/ws", false},
 		{"https://example.com/a%2Fb/", "/ws", "https://example.com/a%2Fb/ws", false},
-		{"localhost:8080", "/health", "http://localhost:8080/health", false},
+		{"localhost:8080", "/health", "https://localhost:8080/health", false},
 		{"http://127.0.0.1:8080/base", "/health", "http://127.0.0.1:8080/base/health", false},
 		{"http://[::1]:8080", "/health", "http://[::1]:8080/health", false},
 		{"http://example.com", "/health", "", true},
@@ -45,6 +90,7 @@ func TestControllerEndpointPolicy(t *testing.T) {
 }
 
 func TestRefreshDoesNotFollowRedirect(t *testing.T) {
+	allowLoopbackHTTP(t)
 	var received bool
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { received = true }))
 	defer target.Close()

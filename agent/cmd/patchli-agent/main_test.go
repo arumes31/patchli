@@ -49,6 +49,7 @@ func TestRunAgentTimeout(t *testing.T) {
 		cancel()
 	}))
 	defer server.Close()
+	allowLoopbackHTTP(t)
 	t.Setenv("SERVER_URL", server.URL)
 
 	RunAgent(ctx)
@@ -80,9 +81,8 @@ func TestHTTPPolling(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	// Strip http:// from server.URL
-	host := server.URL[7:]
-	startHTTPPolling(ctx, host, "test-node", &mockPM{}, nil)
+	allowLoopbackHTTP(t)
+	startHTTPPolling(ctx, server.URL, "test-node", &mockPM{}, nil)
 }
 
 func TestExecuteCommand(t *testing.T) {

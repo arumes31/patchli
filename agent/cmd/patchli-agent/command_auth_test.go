@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -47,6 +48,27 @@ func TestVerifyCommand(t *testing.T) {
 		t.Fatal("replayed command accepted")
 	}
 
+	// A 64-byte signature encodes to 86 Base64 characters plus "==": the last
+	// character carries 4 unused bits. Setting them yields different text
+	// that lenient decoding maps to the same signature bytes.
+	fresh := signTestCommand(t, priv, CommandPayload{ID: "job-2", Action: "check_updates", NodeID: "node-1", ExpiresAt: now.Add(time.Minute).Unix()})
+	if err := verifyCommand(fresh, "node-1", now); err != nil {
+		t.Fatalf("valid command rejected: %v", err)
+	}
+	alt := fresh
+	last := strings.IndexByte(alt.Signature, '=') - 1
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	alt.Signature = alt.Signature[:last] + string(alphabet[strings.IndexByte(alphabet, alt.Signature[last])|1]) + alt.Signature[last+1:]
+	if alt.Signature == fresh.Signature {
+		t.Fatal("test did not produce an alternative encoding")
+	}
+	if decoded, err := base64.StdEncoding.DecodeString(alt.Signature); err != nil || string(decoded) != string(mustDecode(t, fresh.Signature)) {
+		t.Fatalf("alternative encoding does not decode to the same signature: %v", err)
+	}
+	if err := verifyCommand(alt, "node-1", now); err == nil {
+		t.Fatal("replay with an alternative signature encoding accepted")
+	}
+
 	tampered := signTestCommand(t, priv, base)
 	tampered.PrePatchScript = "echo tampered"
 	expiredCmd := base
@@ -68,6 +90,15 @@ func TestVerifyCommand(t *testing.T) {
 			}
 		})
 	}
+}
+
+func mustDecode(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
 
 func TestVerifyManifest(t *testing.T) {
