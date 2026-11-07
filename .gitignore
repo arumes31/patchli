@@ -1,6 +1,11 @@
 # Go testing and coverage
 /data/
 /coverage/
+coverage
+agent/coverage
+server/coverage
+agent/gosec_report
+gosec_report*
 coverage.out
 coverage.html
 coverage.txt
@@ -21,3 +26,11 @@ server/db/*.db
 graphify-out/
 
 .claudeignore
+
+# Syncthing
+.stfolder/
+.stignore
+
+# Documentation (synced to DocDR, not tracked in git)
+docs/
+

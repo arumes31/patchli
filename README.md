@@ -99,6 +99,9 @@ sequenceDiagram
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | PEM certificate and key; when both are set the server serves HTTPS (TLS 1.2+). Agents require HTTPS, so set these unless a TLS reverse proxy fronts the server | - | No |
 | `TRUSTED_PROXY` | IP of a reverse proxy whose `X-Forwarded-Proto` header is trusted | - | No |
 | `COMMAND_SIGNING_KEY` | Base64 Ed25519 private key (32-byte seed) used to sign agent commands | - | No |
+| `DISCORD_WEBHOOK_URL` | Discord webhook URL for fleet alerts and job notifications | - | No |
+| `SLACK_WEBHOOK_URL` | Slack incoming webhook URL for fleet alerts and job notifications | - | No |
+| `TEAMS_WEBHOOK_URL` | Microsoft Teams webhook URL for fleet alerts and job notifications | - | No |
 
 In Docker Compose, PostgreSQL and Redis are only published on `127.0.0.1`, and
 Redis requires `REDIS_PASSWORD`.
@@ -205,15 +208,4 @@ gosec ./...
 
 ## 📄 License
 Patchli is released under the [MIT License](LICENSE).
-```bash
-# Run all tests
-go test ./... -cover
 
-# Run security scan
-gosec ./...
-```
-
----
-
-## 📄 License
-Patchli is released under the [MIT License](LICENSE).
