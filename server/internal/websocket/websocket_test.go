@@ -3,13 +3,16 @@ package websocket
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/arumes31/patchli/server/internal/api"
 	"github.com/arumes31/patchli/server/internal/auth"
+	"github.com/arumes31/patchli/server/internal/db"
 	"github.com/arumes31/patchli/server/internal/fleet"
 	"github.com/arumes31/patchli/server/internal/models"
 	"github.com/golang-jwt/jwt/v5"
@@ -19,6 +22,22 @@ import (
 func init() {
 	auth.SetTestSecrets()
 	SetTestSecrets()
+	for _, mac := range []string{"test-mac", "node", "attacker-node", "bound-node"} {
+		if err := enroll(mac); err != nil {
+			panic(err)
+		}
+	}
+}
+
+// enroll claims mac in the in-memory enrollment store, as a successful agent
+// login would.
+func enroll(mac string) error {
+	exp := time.Now().Add(time.Hour)
+	err := db.EnrollNode(mac, "nonce-"+mac+"-"+time.Now().String(), exp, "refresh-"+mac, exp)
+	if errors.Is(err, db.ErrAlreadyEnrolled) {
+		return nil
+	}
+	return err
 }
 
 func TestHandleWebSocket(t *testing.T) {
@@ -320,4 +339,85 @@ func TestHandleWebSocketBindsNodeToTokenSubject(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatalf("node not registered under token subject: %+v", fleet.Registry.GetNodes())
+}
+
+func TestHandleWebSocketRejectsUnenrolledNode(t *testing.T) {
+	token, err := auth.GenerateAgentJWT("never-enrolled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "http://controller.example/ws", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	HandleWebSocket(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unenrolled node: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestRevocationClosesLiveSessionAndRefusesReconnect checks that revoking an
+// enrollment drops the node's live WebSocket and that its still-unexpired
+// access token cannot open a new one.
+func TestRevocationClosesLiveSessionAndRefusesReconnect(t *testing.T) {
+	fleet.Registry.Reset()
+	t.Cleanup(fleet.Registry.Reset)
+	const mac = "revoked-node"
+	if err := enroll(mac); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(HandleWebSocket))
+	defer server.Close()
+	u := "ws" + strings.TrimPrefix(server.URL, "http")
+	token, err := auth.GenerateAgentJWT(mac)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := http.Header{"Authorization": []string{"Bearer " + token}}
+	conn, resp, err := websocket.DefaultDialer.Dial(u, header)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"heartbeat","payload":{"hostname":"revoked"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for fleet.Registry.SendCommand(mac, models.CommandPayload{ID: "probe", Action: "check_updates"}) != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("node never registered")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Drain the probe command.
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, _, err := conn.ReadMessage(); err != nil {
+		t.Fatalf("read probe command: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	api.HandleRevokeEnrollment(rr, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"mac":"`+mac+`"}`)))
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("revoke: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("live connection survived revocation")
+	}
+	if err := fleet.Registry.SendCommand(mac, models.CommandPayload{ID: "after", Action: "check_updates"}); !errors.Is(err, models.ErrAgentOffline) {
+		t.Fatalf("revoked node still receives commands: %v", err)
+	}
+	again, resp2, err := websocket.DefaultDialer.Dial(u, header)
+	if resp2 != nil {
+		defer func() { _ = resp2.Body.Close() }()
+	}
+	if err == nil {
+		_ = again.Close()
+		t.Fatal("revoked node reconnected with its unexpired access token")
+	}
+	if resp2 == nil || resp2.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("reconnect: want 401, got %v", resp2)
+	}
 }

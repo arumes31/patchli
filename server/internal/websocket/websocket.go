@@ -98,6 +98,19 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The access token outlives an enrollment revocation by up to its lifetime,
+	// so the enrollment claim is the authority on whether the node may connect.
+	enrolled, err := db.IsEnrolled(nodeID)
+	if err != nil {
+		log.Printf("Enrollment lookup for %q failed: %v", nodeID, err) // #nosec G706 -- %q escapes control characters.
+		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if !enrolled {
+		http.Error(w, "Unauthorized - Enrollment revoked", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("Upgrade error: %v", err)
@@ -159,6 +172,19 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			p.MacAddress = nodeID
 			fleet.Registry.Register(nodeID, conn, p)
+			if !registered {
+				// Re-check after the first registration: a revocation that
+				// ran between the upgrade and the registration found nothing
+				// to disconnect. Revocation deletes the claim before it
+				// disconnects, so one of the two always sees the other.
+				if ok, err := db.IsEnrolled(nodeID); err != nil || !ok {
+					fleet.Registry.UnregisterConn(nodeID, conn)
+					_ = conn.WriteControl(websocket.CloseMessage,
+						websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "enrollment revoked"),
+						time.Now().Add(time.Second))
+					return
+				}
+			}
 			registered = true
 
 			if err := db.UpdateNodeStatus(nodeID, p.Hostname, p.OS, p.OSVersion, p.Kernel, "online"); err != nil {

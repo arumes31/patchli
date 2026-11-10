@@ -323,6 +323,21 @@ func RevokeEnrollment(mac string) error {
 	})
 }
 
+// IsEnrolled reports whether mac holds a current, unexpired enrollment claim.
+// Revocation deletes the claim, so this is the check that makes a revoked
+// node's still-unexpired access token useless.
+func IsEnrolled(mac string) (bool, error) {
+	if DB == nil {
+		memEnrollmentsMu.Lock()
+		defer memEnrollmentsMu.Unlock()
+		exp, ok := memEnrollments[mac]
+		return ok && time.Now().Before(exp), nil
+	}
+	var enrolled bool
+	err := DB.QueryRow("SELECT EXISTS(SELECT 1 FROM node_enrollments WHERE mac_address = $1 AND expires_at > CURRENT_TIMESTAMP)", mac).Scan(&enrolled)
+	return enrolled, err
+}
+
 var (
 	memNoncesMu sync.Mutex
 	memNonces   = map[string]time.Time{}

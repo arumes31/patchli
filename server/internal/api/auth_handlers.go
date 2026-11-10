@@ -11,6 +11,7 @@ import (
 
 	"github.com/arumes31/patchli/server/internal/auth"
 	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/patchli/server/internal/fleet"
 )
 
 // maxAuthBodyBytes caps login/refresh request bodies.
@@ -172,6 +173,13 @@ func HandleRevokeEnrollment(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to revoke enrollment: %v", err)
 		http.Error(w, "Failed to revoke enrollment", http.StatusInternalServerError)
 		return
+	}
+	// The access token of a connected node is still valid; drop its live
+	// session too. Reconnects are refused because the enrollment is gone.
+	if fleet.Registry.Disconnect(req.MAC) {
+		if err := db.MarkNodeOffline(req.MAC); err != nil {
+			log.Printf("Failed to mark revoked node offline: %v", err)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

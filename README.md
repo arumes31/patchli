@@ -53,6 +53,7 @@ Agents register themselves securely using an HMAC-signed setup script. Once regi
   ```bash
   curl -fsS -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -d '{"mac":"<node-id>"}' https://patch.example.com/api/v1/nodes/revoke
   ```
+- Revoking an enrollment also closes the node's live WebSocket, and `/ws` refuses nodes without a current enrollment, so a revoked node's still-unexpired access token cannot reconnect.
 - The WebSocket binds the node identity to the access token subject; heartbeats reporting a different node ID are rejected. Refresh tokens are single-use and reuse revokes all tokens of the node. Enrollment, rotation and revocation are serialized per node, so a replacement issued by a concurrent refresh cannot survive a reuse revocation.
 - The setup page and scripts require an HTTPS `BASE_URL` (plain HTTP only for `localhost`/loopback). The generated install commands pin HTTPS, fail on HTTP errors and do not follow redirects.
 

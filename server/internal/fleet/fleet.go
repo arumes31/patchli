@@ -68,6 +68,29 @@ func (am *AgentManager) UnregisterConn(mac string, conn *websocket.Conn) bool {
 	return true
 }
 
+// Disconnect unregisters mac and closes its live connection, if any. It is
+// used when a node's enrollment is revoked, so the revoked node cannot keep
+// an already authenticated session. It reports whether a connection was
+// closed.
+func (am *AgentManager) Disconnect(mac string) bool {
+	am.mu.Lock()
+	defer am.mu.Unlock()
+	conn, ok := am.agents[mac]
+	delete(am.agents, mac)
+	delete(am.activeJobs, mac)
+	if a, found := am.details[mac]; found {
+		a.Status = "offline"
+	}
+	if !ok {
+		return false
+	}
+	_ = conn.WriteControl(websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "enrollment revoked"),
+		time.Now().Add(time.Second))
+	_ = conn.Close()
+	return true
+}
+
 func (am *AgentManager) PruneStaleAgents(ttl time.Duration) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
