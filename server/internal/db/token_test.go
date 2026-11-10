@@ -301,3 +301,40 @@ func TestConsumeRegistrationNonce(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestIsEnrolled(t *testing.T) {
+	t.Run("database", func(t *testing.T) {
+		mock := tokenDatabase(t)
+		for _, want := range []bool{true, false} {
+			mock.ExpectQuery(`SELECT EXISTS\(SELECT 1 FROM node_enrollments`).WithArgs("node").
+				WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(want))
+			got, err := IsEnrolled("node")
+			if err != nil || got != want {
+				t.Fatalf("IsEnrolled = %v, %v; want %v", got, err, want)
+			}
+		}
+		mock.ExpectQuery(`SELECT EXISTS\(SELECT 1 FROM node_enrollments`).WithArgs("node").
+			WillReturnError(errors.New("unavailable"))
+		if _, err := IsEnrolled("node"); err == nil {
+			t.Fatal("lookup error was swallowed")
+		}
+	})
+	t.Run("memory", func(t *testing.T) {
+		previous := DB
+		DB = nil
+		t.Cleanup(func() { DB = previous })
+		exp := time.Now().Add(time.Hour)
+		if err := EnrollNode("mem-enrolled", "nonce-mem-enrolled", exp, "refresh", exp); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := IsEnrolled("mem-enrolled"); err != nil || !ok {
+			t.Fatalf("enrolled node: %v, %v", ok, err)
+		}
+		if err := RevokeEnrollment("mem-enrolled"); err != nil {
+			t.Fatal(err)
+		}
+		if ok, _ := IsEnrolled("mem-enrolled"); ok {
+			t.Fatal("revoked node still enrolled")
+		}
+	})
+}

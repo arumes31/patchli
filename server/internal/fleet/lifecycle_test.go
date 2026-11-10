@@ -190,3 +190,32 @@ func TestSendCommandSignsWhenKeyConfigured(t *testing.T) {
 		t.Fatalf("command not signed: %+v", message.Payload)
 	}
 }
+
+func TestDisconnectClosesAndUnregistersNode(t *testing.T) {
+	manager := &AgentManager{}
+	manager.Reset()
+	if manager.Disconnect("node") {
+		t.Fatal("disconnected a node that was never registered")
+	}
+	conn, peer := socketPair(t)
+	manager.Register("node", conn, models.HeartbeatPayload{Hostname: "host"})
+	if !manager.AcquireJob("node", "job") {
+		t.Fatal("could not acquire job")
+	}
+	if !manager.Disconnect("node") {
+		t.Fatal("registered node was not disconnected")
+	}
+	if err := manager.SendCommand("node", models.CommandPayload{ID: "after"}); err != models.ErrAgentOffline {
+		t.Fatalf("disconnected node still reachable: %v", err)
+	}
+	if manager.GetNodes()[0].Status != "offline" {
+		t.Fatal("disconnect did not mark the node offline")
+	}
+	if !manager.AcquireJob("node", "next") {
+		t.Fatal("disconnect did not release the active job")
+	}
+	_ = peer.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := peer.ReadMessage(); err == nil {
+		t.Fatal("peer connection still open after disconnect")
+	}
+}
