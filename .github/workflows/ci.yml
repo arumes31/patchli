@@ -3,8 +3,18 @@ name: CI - Security & Quality
 on:
   push:
     branches: [ main, v2_test ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
 
 permissions:
   contents: read
@@ -17,6 +27,7 @@ jobs:
   lint:
     name: Linting
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,7 +36,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.10'
-          cache: true
+          # Modules live in server/ and agent/; without this the Go cache is skipped.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
       
       - name: golangci-lint (Server)
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -44,6 +58,7 @@ jobs:
   security:
     name: Security Scans
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,6 +67,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.10'
+          # Modules live in server/ and agent/; without this the Go cache is skipped.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Install Tools
         run: |
@@ -77,6 +96,7 @@ jobs:
   test:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -85,6 +105,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.10'
+          # Modules live in server/ and agent/; without this the Go cache is skipped.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
 
       - name: Test Server with Coverage
         run: |
@@ -103,6 +127,7 @@ jobs:
   chaos_test:
     name: Chaos Engineering Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:15-alpine
@@ -123,6 +148,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.10'
+          # Modules live in server/ and agent/; without this the Go cache is skipped.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
       
       - name: Verify database migrations and data preservation
         run: go test -tags integration ./internal/db -run TestMigrations -count=1
@@ -185,6 +214,7 @@ jobs:
   fuzz_test:
     name: Fuzz Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -193,6 +223,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.10'
+          # Modules live in server/ and agent/; without this the Go cache is skipped.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
       
       - name: Fuzz WebSocket Parser
         run: go test -fuzz=FuzzMessage -fuzztime=1m ./internal/websocket
@@ -201,6 +235,7 @@ jobs:
   deadlock_detection:
     name: Deadlock Detection
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -209,6 +244,10 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.10'
+          # Modules live in server/ and agent/; without this the Go cache is skipped.
+          cache-dependency-path: |
+            server/go.sum
+            agent/go.sum
       
       - name: Run Tests with Deadlock Detector
         run: go test -v -race ./...
