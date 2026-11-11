@@ -35,7 +35,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.4'
           # Modules live in server/ and agent/; without this the Go cache is skipped.
           cache-dependency-path: |
             server/go.sum
@@ -66,7 +66,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.4'
           # Modules live in server/ and agent/; without this the Go cache is skipped.
           cache-dependency-path: |
             server/go.sum
@@ -104,7 +104,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.4'
           # Modules live in server/ and agent/; without this the Go cache is skipped.
           cache-dependency-path: |
             server/go.sum
@@ -147,7 +147,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.4'
           # Modules live in server/ and agent/; without this the Go cache is skipped.
           cache-dependency-path: |
             server/go.sum
@@ -222,7 +222,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.4'
           # Modules live in server/ and agent/; without this the Go cache is skipped.
           cache-dependency-path: |
             server/go.sum
@@ -243,7 +243,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.4'
           # Modules live in server/ and agent/; without this the Go cache is skipped.
           cache-dependency-path: |
             server/go.sum
