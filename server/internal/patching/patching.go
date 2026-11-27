@@ -259,7 +259,7 @@ func skipReason(n db.Node, online bool, windowStart time.Time) string {
 		return "excluded"
 	case !online:
 		return "offline"
-	case n.LastPatchAt != nil && !n.LastPatchAt.Before(windowStart) && !(n.RebootRequired && n.AutoReboot):
+	case n.LastPatchAt != nil && !n.LastPatchAt.Before(windowStart) && (!n.RebootRequired || !n.AutoReboot):
 		return "already patched"
 	}
 	return ""
@@ -339,7 +339,7 @@ func (s *Scheduler) run(ctx context.Context, manual bool) {
 		s.setCurrent(true, n.Hostname)
 
 		job := db.Job{}
-		if !(n.LastPatchAt != nil && !n.LastPatchAt.Before(start)) {
+		if n.LastPatchAt == nil || n.LastPatchAt.Before(start) {
 			job, err = waitForJob(ctx, n, "apply_updates", patchTimeout)
 			if err != nil {
 				return

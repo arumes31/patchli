@@ -52,8 +52,6 @@ const (
 	maxAgentBinaryBytes = 256 << 20
 	// maxManifestBytes caps the update manifest and its signature.
 	maxManifestBytes = 64 << 10
-	// maxCommandBytes caps a polled command payload.
-	maxCommandBytes = 1 << 20
 )
 
 // Keep service-owned storage and destructive host operations behind injectable
