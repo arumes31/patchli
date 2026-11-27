@@ -23,7 +23,7 @@ const (
 	RefreshTokenDuration = time.Hour * 24 * 7
 
 	// TokenAudience is the "aud" claim carried by every agent token.
-	TokenAudience = "patchli-agent"
+	TokenAudience = "rpatch-agent"
 	// TokenTypeAccess and TokenTypeRefresh are the values of the "typ" claim.
 	// Validators enforce them so a refresh token cannot be used as an access
 	// token (and vice versa).

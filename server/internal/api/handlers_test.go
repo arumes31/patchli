@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arumes31/patchli/server/internal/fleet"
-	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/fleet"
+	"github.com/arumes31/rpatch/server/internal/models"
 )
 
 func setupHandlers(t *testing.T) {
@@ -174,20 +174,20 @@ func TestHandleSetup(t *testing.T) {
 		{
 			name:           "Custom BASE_URL",
 			query:          "group=test",
-			env:            map[string]string{"BASE_URL": "https://patchli.example.com"},
-			expectedInBody: []string{"SERVER_URL='https://patchli.example.com'"},
+			env:            map[string]string{"BASE_URL": "https://rpatch.example.com"},
+			expectedInBody: []string{"SERVER_URL='https://rpatch.example.com'"},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "Remote HTTP BASE_URL rejected",
 			query:          "group=test",
-			env:            map[string]string{"BASE_URL": "http://patchli.example.com"},
+			env:            map[string]string{"BASE_URL": "http://rpatch.example.com"},
 			expectedStatus: http.StatusInternalServerError,
 		},
 		{
 			name:           "Remote HTTP host rejected",
 			query:          "group=test",
-			host:           "patchli.example.com",
+			host:           "rpatch.example.com",
 			expectedStatus: http.StatusInternalServerError,
 		},
 		{

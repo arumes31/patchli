@@ -9,7 +9,7 @@ services:
       - "8080:8080"
     environment:
       # Required
-      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:?database password required}@postgres:5432/patchli?sslmode=disable
+      - DB_URL=postgres://postgres:${POSTGRES_PASSWORD:?database password required}@postgres:5432/rpatch?sslmode=disable
       - REDIS_URL=redis://:${REDIS_PASSWORD:?redis password required}@redis:6379
       - JWT_SECRET=${JWT_SECRET:?JWT secret required}
       - REGISTRATION_SECRET=${REGISTRATION_SECRET:?registration secret required}
@@ -65,7 +65,7 @@ services:
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?database password required}
-      - POSTGRES_DB=patchli
+      - POSTGRES_DB=rpatch
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     restart: unless-stopped

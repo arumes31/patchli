@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arumes31/patchli/agent/internal/identity"
-	"github.com/arumes31/patchli/agent/internal/state"
-	"github.com/arumes31/patchli/agent/internal/updater"
+	"github.com/arumes31/rpatch/agent/internal/identity"
+	"github.com/arumes31/rpatch/agent/internal/state"
+	"github.com/arumes31/rpatch/agent/internal/updater"
 	"github.com/coreos/go-systemd/v22/daemon"
 	"github.com/gorilla/websocket"
 )
@@ -106,20 +106,20 @@ type TokenPair struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-// getDataDir returns the platform-specific data directory for Patchli.
+// getDataDir returns the platform-specific data directory for rpatch.
 func getDataDir() string {
 	if runtime.GOOS == "windows" {
 		pd := os.Getenv("PROGRAMDATA")
 		if pd == "" {
 			pd = `C:\ProgramData`
 		}
-		return filepath.Join(pd, "Patchli")
+		return filepath.Join(pd, "rpatch")
 	}
-	return "/etc/patchli"
+	return "/etc/rpatch"
 }
 
 func performSelfDiagnosis() {
-	fmt.Println("--- Patchli Agent Self-Diagnosis ---")
+	fmt.Println("--- rpatch Agent Self-Diagnosis ---")
 
 	fmt.Print("1. Identity check: ")
 	nodeID, err := getIdentityFunc()
@@ -172,9 +172,9 @@ func getTokenFile() string {
 		if pd == "" {
 			pd = `C:\ProgramData`
 		}
-		return filepath.Join(pd, "Patchli", "tokens.json")
+		return filepath.Join(pd, "rpatch", "tokens.json")
 	}
-	return "/etc/patchli/tokens.json"
+	return "/etc/rpatch/tokens.json"
 }
 
 func saveTokens(pair TokenPair) error {
@@ -243,7 +243,7 @@ func main() {
 }
 
 func RunAgent(ctx context.Context) {
-	log.Println("Starting Patchli Agent...")
+	log.Println("Starting rpatch Agent...")
 
 	pm, err := updater.DetectPackageManager()
 	if err != nil {
@@ -379,7 +379,7 @@ func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm u
 			rebootNeeded := pm.RebootRequired()
 
 			if rebootNeeded && runtime.GOOS != "windows" {
-				_ = exec.Command("wall", "Patchli: System reboot is required to finish updates.").Run()
+				_ = exec.Command("wall", "rpatch: System reboot is required to finish updates.").Run()
 			}
 
 			payload := HeartbeatPayload{
@@ -602,7 +602,7 @@ var performSecureAgentUpdateFunc = func(ctx context.Context) updater.UpdateResul
 		return updater.UpdateResult{Success: false, Error: fmt.Errorf("HTTP %d during agent download", resp.StatusCode)}
 	}
 
-	tmpFile, err := os.CreateTemp("", "patchli-agent-*")
+	tmpFile, err := os.CreateTemp("", "rpatch-agent-*")
 	if err != nil {
 		return updater.UpdateResult{Success: false, Error: err}
 	}
@@ -772,7 +772,7 @@ func restartAgent(ctx context.Context) ([]byte, error) {
 		return restartWindowsAgent()
 	}
 	if _, err := os.Stat("/run/openrc"); err == nil {
-		return exec.CommandContext(ctx, "rc-service", "patchli-agent", "restart").CombinedOutput()
+		return exec.CommandContext(ctx, "rc-service", "rpatch-agent", "restart").CombinedOutput()
 	}
-	return exec.CommandContext(ctx, "systemctl", "restart", "patchli-agent").CombinedOutput()
+	return exec.CommandContext(ctx, "systemctl", "restart", "rpatch-agent").CombinedOutput()
 }

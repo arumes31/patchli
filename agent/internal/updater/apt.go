@@ -82,7 +82,7 @@ func (m *AptManager) RebootRequired() bool {
 
 func (m *AptManager) PreFlightCheck(ctx context.Context) error {
 	// 1. Check disk space (require 1GB)
-	if err := checkDiskSpaceFunc("/var/lib/patchli", 1024*1024*1024); err != nil {
+	if err := checkDiskSpaceFunc("/var/lib/rpatch", 1024*1024*1024); err != nil {
 		return err
 	}
 

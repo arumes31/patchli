@@ -12,5 +12,5 @@ func init() {
 	if pd == "" {
 		pd = `C:\ProgramData`
 	}
-	stateFile = filepath.Join(pd, "Patchli", "state.json")
+	stateFile = filepath.Join(pd, "rpatch", "state.json")
 }

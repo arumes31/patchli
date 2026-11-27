@@ -177,7 +177,7 @@ func TestCommandMessageWireFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "patchli-command-v1\n" + `{"id":"job","action":"apply_updates","packages":["a"],"pre_patch_script":"pre","post_patch_script":"post","health_check_command":"hc","node_id":"n","expires_at":42}`
+	want := "rpatch-command-v1\n" + `{"id":"job","action":"apply_updates","packages":["a"],"pre_patch_script":"pre","post_patch_script":"post","health_check_command":"hc","node_id":"n","expires_at":42}`
 	if string(msg) != want {
 		t.Fatalf("got %q\nwant %q", msg, want)
 	}

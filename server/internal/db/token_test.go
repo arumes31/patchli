@@ -117,7 +117,7 @@ func digest(s string) string {
 
 func expectNodeLock(mock sqlmock.Sqlmock, mac string) {
 	mock.ExpectBegin()
-	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("patchli-node:" + mac).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("rpatch-node:" + mac).WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 func TestEnrollNode(t *testing.T) {

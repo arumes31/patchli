@@ -34,7 +34,7 @@ $SearchResult.Updates.Count
 const psWindowsUpdateVersion = "2.2.1.5"
 
 // applyUpdatesScript installs updates with PSWindowsUpdate. The package list
-// is passed as data through PATCHLI_PACKAGES_JSON, never as script text, and
+// is passed as data through RPATCH_PACKAGES_JSON, never as script text, and
 // the module is only loaded if its Authenticode signature is valid and was
 // issued to the module's publisher.
 const applyUpdatesScript = `
@@ -50,7 +50,7 @@ foreach ($file in @('PSWindowsUpdate.dll', 'PSWindowsUpdate.psd1')) {
 	}
 }
 Import-Module (Join-Path $module.ModuleBase 'PSWindowsUpdate.psd1')
-$pkgNames = @($env:PATCHLI_PACKAGES_JSON | ConvertFrom-Json)
+$pkgNames = @($env:RPATCH_PACKAGES_JSON | ConvertFrom-Json)
 if ($pkgNames.Count -gt 0 -and $pkgNames[0] -ne "") {
 	Install-WindowsUpdate -Title $pkgNames -AcceptAll -IgnoreReboot
 } else {
@@ -64,7 +64,7 @@ func (m *WindowsManager) ApplyUpdates(ctx context.Context, packages []string) (U
 	if cmd.Env == nil {
 		cmd.Env = os.Environ()
 	}
-	cmd.Env = append(cmd.Env, "PATCHLI_PACKAGES_JSON="+string(pkgBytes))
+	cmd.Env = append(cmd.Env, "RPATCH_PACKAGES_JSON="+string(pkgBytes))
 	out, err := cmd.CombinedOutput()
 	return UpdateResult{Success: err == nil, Output: string(out), Error: err}, err
 }

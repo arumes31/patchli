@@ -56,7 +56,7 @@ func (m *ApkManager) RebootRequired() bool {
 
 func (m *ApkManager) PreFlightCheck(ctx context.Context) error {
 	// Check disk space (require 500MB for Alpine)
-	if err := checkDiskSpaceFunc("/var/lib/patchli", 500*1024*1024); err != nil {
+	if err := checkDiskSpaceFunc("/var/lib/rpatch", 500*1024*1024); err != nil {
 		return err
 	}
 

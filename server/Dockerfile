@@ -8,13 +8,13 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o patchli-server ./cmd/patchli-server/main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -o rpatch-server ./cmd/rpatch-server/main.go
 
 FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 WORKDIR /app
-COPY --from=builder /app/patchli-server .
+COPY --from=builder /app/rpatch-server .
 
 # Run as an unprivileged user.
 USER 65532:65532
 EXPOSE 8080
-CMD ["./patchli-server"]
+CMD ["./rpatch-server"]

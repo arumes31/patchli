@@ -58,7 +58,7 @@ func TestControllerEndpointPolicy(t *testing.T) {
 		fail              bool
 	}{
 		{"example.com:8443", "/api/v1/poll", "https://example.com:8443/api/v1/poll", false},
-		{"https://example.com/patchli/", "/ws", "https://example.com/patchli/ws", false},
+		{"https://example.com/rpatch/", "/ws", "https://example.com/rpatch/ws", false},
 		{"https://example.com/a%2Fb/", "/ws", "https://example.com/a%2Fb/ws", false},
 		{"localhost:8080", "/health", "https://localhost:8080/health", false},
 		{"http://127.0.0.1:8080/base", "/health", "http://127.0.0.1:8080/base/health", false},

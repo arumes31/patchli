@@ -18,9 +18,9 @@ import (
 
 func migrationDatabase(t *testing.T) (*sql.DB, *migrate.Migrate) {
 	t.Helper()
-	raw := os.Getenv("PATCHLI_MIGRATION_TEST_URL")
+	raw := os.Getenv("RPATCH_MIGRATION_TEST_URL")
 	if raw == "" {
-		t.Fatal("PATCHLI_MIGRATION_TEST_URL must identify a disposable patchli test database")
+		t.Fatal("RPATCH_MIGRATION_TEST_URL must identify a disposable rpatch test database")
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -29,8 +29,8 @@ func migrationDatabase(t *testing.T) (*sql.DB, *migrate.Migrate) {
 	if u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1" && u.Hostname() != "::1" {
 		t.Fatal("migration tests require a local disposable PostgreSQL instance")
 	}
-	if !strings.HasPrefix(strings.TrimPrefix(u.Path, "/"), "patchli") {
-		t.Fatal("migration tests require a dedicated patchli database")
+	if !strings.HasPrefix(strings.TrimPrefix(u.Path, "/"), "rpatch") {
+		t.Fatal("migration tests require a dedicated rpatch database")
 	}
 	admin, err := sql.Open("pgx", raw)
 	if err != nil {

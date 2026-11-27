@@ -146,7 +146,7 @@ func TestSelfDestruct(t *testing.T) {
 	t.Run("FullSuccessLinux", func(t *testing.T) {
 		goosFunc = func() string { return "linux" }
 		statFunc = func(name string) (os.FileInfo, error) {
-			if name == "/etc/systemd/system/patchli-agent.service" {
+			if name == "/etc/systemd/system/rpatch-agent.service" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
@@ -190,7 +190,7 @@ func TestSelfDestruct(t *testing.T) {
 	t.Run("PartialFailures", func(t *testing.T) {
 		goosFunc = func() string { return "linux" }
 		statFunc = func(name string) (os.FileInfo, error) {
-			if name == "/etc/systemd/system/patchli-agent.service" {
+			if name == "/etc/systemd/system/rpatch-agent.service" {
 				return nil, nil
 			}
 			return nil, os.ErrNotExist
@@ -199,13 +199,13 @@ func TestSelfDestruct(t *testing.T) {
 			return getMockCommandNoCtx(name, arg...)
 		}
 		removeFunc = func(name string) error {
-			if name == "/etc/systemd/system/patchli-agent.service" {
+			if name == "/etc/systemd/system/rpatch-agent.service" {
 				return fmt.Errorf("remove error")
 			}
 			return nil
 		}
 		removeAllFunc = func(name string) error {
-			if name == "/etc/patchli" {
+			if name == "/etc/rpatch" {
 				return fmt.Errorf("removeAll error")
 			}
 			return nil
@@ -260,7 +260,7 @@ func TestSelfDestruct_SystemdFailures(t *testing.T) {
 	osExecutableFunc = func() (string, error) { return "/path/to/exe", nil }
 	goosFunc = func() string { return "linux" }
 	statFunc = func(name string) (os.FileInfo, error) {
-		if name == "/etc/systemd/system/patchli-agent.service" {
+		if name == "/etc/systemd/system/rpatch-agent.service" {
 			return nil, nil
 		}
 		return nil, os.ErrNotExist

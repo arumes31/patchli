@@ -181,7 +181,7 @@ type execer interface {
 // the rest of tx. The advisory lock does not depend on any row existing, so
 // it also orders requests that race to create the first rows of a node.
 func lockNode(tx *sql.Tx, mac string) error {
-	_, err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "patchli-node:"+mac)
+	_, err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "rpatch-node:"+mac)
 	return err
 }
 

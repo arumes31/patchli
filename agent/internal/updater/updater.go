@@ -67,33 +67,33 @@ func SelfDestruct() error {
 
 	if goosFunc() == "windows" {
 		// Windows service cleanup
-		_ = execCommand("sc.exe", "stop", "patchli-agent").Run()
-		_ = execCommand("sc.exe", "delete", "patchli-agent").Run()
+		_ = execCommand("sc.exe", "stop", "rpatch-agent").Run()
+		_ = execCommand("sc.exe", "delete", "rpatch-agent").Run()
 
 		// Remove configuration and state
 		pd := os.Getenv("PROGRAMDATA")
 		if pd == "" {
 			pd = `C:\ProgramData`
 		}
-		if err := removeAllFunc(pd + `\Patchli`); err != nil && !os.IsNotExist(err) {
+		if err := removeAllFunc(pd + `\rpatch`); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}
 	} else {
 		// Unix: Remove systemd service if exists
-		if _, err := statFunc("/etc/systemd/system/patchli-agent.service"); err == nil {
-			_ = execCommand("systemctl", "stop", "patchli-agent").Run()
-			_ = execCommand("systemctl", "disable", "patchli-agent").Run()
-			if err := removeFunc("/etc/systemd/system/patchli-agent.service"); err != nil {
+		if _, err := statFunc("/etc/systemd/system/rpatch-agent.service"); err == nil {
+			_ = execCommand("systemctl", "stop", "rpatch-agent").Run()
+			_ = execCommand("systemctl", "disable", "rpatch-agent").Run()
+			if err := removeFunc("/etc/systemd/system/rpatch-agent.service"); err != nil {
 				errs = append(errs, err)
 			}
 			_ = execCommand("systemctl", "daemon-reload").Run()
 		}
 
 		// Remove configuration and state
-		if err := removeAllFunc("/etc/patchli"); err != nil && !os.IsNotExist(err) {
+		if err := removeAllFunc("/etc/rpatch"); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}
-		if err := removeAllFunc("/var/lib/patchli"); err != nil && !os.IsNotExist(err) {
+		if err := removeAllFunc("/var/lib/rpatch"); err != nil && !os.IsNotExist(err) {
 			errs = append(errs, err)
 		}
 	}

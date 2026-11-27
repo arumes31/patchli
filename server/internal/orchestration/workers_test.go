@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arumes31/patchli/server/internal/fleet"
-	"github.com/arumes31/patchli/server/internal/models"
-	"github.com/arumes31/patchli/server/internal/webhooks"
+	"github.com/arumes31/rpatch/server/internal/fleet"
+	"github.com/arumes31/rpatch/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/webhooks"
 )
 
 func TestWorkerPool(t *testing.T) {

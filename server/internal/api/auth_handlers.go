@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/arumes31/patchli/server/internal/auth"
-	"github.com/arumes31/patchli/server/internal/db"
-	"github.com/arumes31/patchli/server/internal/fleet"
+	"github.com/arumes31/rpatch/server/internal/auth"
+	"github.com/arumes31/rpatch/server/internal/db"
+	"github.com/arumes31/rpatch/server/internal/fleet"
 )
 
 // maxAuthBodyBytes caps login/refresh request bodies.
