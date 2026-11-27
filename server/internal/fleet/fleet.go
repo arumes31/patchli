@@ -189,3 +189,11 @@ func (am *AgentManager) SetStatus(id string, status string) {
 		a.Status = status
 	}
 }
+
+// IsOnline reports whether the node has a live connection.
+func (am *AgentManager) IsOnline(mac string) bool {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	_, ok := am.agents[mac]
+	return ok
+}

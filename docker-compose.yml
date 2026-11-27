@@ -3,8 +3,8 @@ version: '3.8'
 services:
   server:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -43,7 +43,7 @@ services:
   agent:
     build:
       context: ./agent
-      dockerfile: Dockerfile
+
     environment:
       # Required. HTTPS with a trusted certificate (e.g. via a TLS reverse proxy).
       - SERVER_URL=${SERVER_URL:-server:8080}

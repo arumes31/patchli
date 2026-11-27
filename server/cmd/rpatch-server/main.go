@@ -9,12 +9,14 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the runtime image has no zoneinfo; the window uses Europe/Vienna
 
 	"github.com/arumes31/rpatch/server/internal/api"
 	"github.com/arumes31/rpatch/server/internal/auth"
 	"github.com/arumes31/rpatch/server/internal/cmdsign"
 	"github.com/arumes31/rpatch/server/internal/db"
 	"github.com/arumes31/rpatch/server/internal/orchestration"
+	"github.com/arumes31/rpatch/server/internal/patching"
 	"github.com/arumes31/rpatch/server/internal/websocket"
 	"github.com/arumes31/rpatch/server/static"
 )
@@ -43,6 +45,10 @@ func main() {
 		if err := db.Init(dbURL); err != nil {
 			log.Fatalf("DB Init failed: %v", err)
 		}
+		schedCtx, stopScheduler := context.WithCancel(context.Background())
+		defer stopScheduler()
+		patching.Default.Start(schedCtx)
+		log.Println("Patch scheduler started.")
 	}
 
 	mux := http.NewServeMux()
@@ -65,6 +71,7 @@ func main() {
 		api.RequireAdminPage(servePage("index.html"))(w, r)
 	})
 	mux.HandleFunc("/login", servePage("login.html"))
+	mux.HandleFunc("GET /download/{file}", api.HandleAgentDownload)
 	mux.HandleFunc("/setup", api.RequireAdminPage(api.ServeSetupUI))
 
 	// API v1
@@ -72,6 +79,14 @@ func main() {
 	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
 	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
 	mux.HandleFunc("/api/v1/nodes/revoke", api.AuthMiddleware(api.HandleRevokeEnrollment))
+	mux.HandleFunc("POST /api/v1/nodes/{id}/action", api.AuthMiddleware(api.HandleNodeAction))
+	mux.HandleFunc("PUT /api/v1/nodes/{id}/policy", api.AuthMiddleware(api.HandleNodePolicy))
+	mux.HandleFunc("GET /api/v1/jobs", api.AuthMiddleware(api.HandleJobs))
+	mux.HandleFunc("GET /api/v1/jobs/{id}", api.AuthMiddleware(api.HandleJob))
+	mux.HandleFunc("GET /api/v1/settings", api.AuthMiddleware(api.HandleSettings))
+	mux.HandleFunc("PUT /api/v1/settings", api.AuthMiddleware(api.HandleSettings))
+	mux.HandleFunc("GET /api/v1/window", api.AuthMiddleware(api.HandleWindowStatus))
+	mux.HandleFunc("POST /api/v1/window/run", api.AuthMiddleware(api.HandleWindowRun))
 
 	// Agent Auth (rate limited per client IP)
 	authLimiter := api.NewRateLimiter(30, time.Minute)

@@ -13,6 +13,7 @@ import (
 	"github.com/arumes31/rpatch/server/internal/db"
 	"github.com/arumes31/rpatch/server/internal/fleet"
 	"github.com/arumes31/rpatch/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/patching"
 	"github.com/arumes31/rpatch/server/internal/proxy"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
@@ -187,12 +188,21 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			registered = true
 
-			if err := db.UpdateNodeStatus(nodeID, p.Hostname, p.OS, p.OSVersion, p.Kernel, "online"); err != nil {
+			patching.HandleHeartbeat(nodeID, p.BootID)
+			if err := db.UpdateHeartbeat(nodeID, p.Hostname, p.OS, p.OSVersion, p.Kernel, p.BootID, p.AgentVersion, p.RebootNeeded); err != nil {
 				log.Printf("Failed to update node status for %q: %v", nodeID, err) // #nosec G706 -- %q escapes control characters.
 			}
 
-		case "log":
-			// Handle log payload
+		case "result":
+			if !registered {
+				continue
+			}
+			var res patching.Result
+			if err := json.Unmarshal(wsMsg.Payload, &res); err != nil {
+				log.Printf("Result unmarshal error: %v", err)
+				continue
+			}
+			patching.HandleResult(nodeID, res)
 		}
 	}
 }
