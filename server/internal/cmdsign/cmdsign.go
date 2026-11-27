@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/models"
 )
 
 // CommandLifetime bounds how long a signed command stays valid.
@@ -20,7 +20,7 @@ const CommandLifetime = 15 * time.Minute
 
 // signaturePrefix domain-separates command signatures from other signatures
 // made with the same key. The agent uses the identical prefix.
-const signaturePrefix = "patchli-command-v1\n"
+const signaturePrefix = "rpatch-command-v1\n"
 
 var (
 	mu         sync.RWMutex

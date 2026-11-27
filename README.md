@@ -1,19 +1,21 @@
-# <img src="server/static/assets/img/logo.png" width="48" height="48" valign="middle"> Patchli
+# <img src="server/static/assets/img/logo.png" width="48" height="48" valign="middle"> rpatch
 
-[![CI](https://github.com/arumes31/patchli/actions/workflows/ci.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/ci.yml)
-[![CD](https://github.com/arumes31/patchli/actions/workflows/cd.yml/badge.svg)](https://github.com/arumes31/patchli/actions/workflows/cd.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/arumes31/patchli)](https://goreportcard.com/report/github.com/arumes31/patchli)
+[![CI](https://github.com/arumes31/rpatch/actions/workflows/ci.yml/badge.svg)](https://github.com/arumes31/rpatch/actions/workflows/ci.yml)
+[![CD](https://github.com/arumes31/rpatch/actions/workflows/cd.yml/badge.svg)](https://github.com/arumes31/rpatch/actions/workflows/cd.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/arumes31/rpatch)](https://goreportcard.com/report/github.com/arumes31/rpatch)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 ### Distributed Linux Patch Management & Fleet Monitoring System
 
-Patchli is a high-performance, distributed Patch Management system designed to seamlessly orchestrate updates across massive fleets of Linux and Windows nodes. It provides a centralized Control Plane for monitoring, scheduling, and executing updates with a focus on reliability, security, and real-time observability.
+rpatch is a high-performance, distributed Patch Management system designed to seamlessly orchestrate updates across massive fleets of Linux and Windows nodes. It provides a centralized Control Plane for monitoring, scheduling, and executing updates with a focus on reliability, security, and real-time observability.
+
+> **Status:** renamed from patchli. Not production-ready yet: see [docs/PLAN.md](docs/PLAN.md) for the completeness check, UI concept and roadmap.
 
 ---
 
 ## 🏗️ Architecture
 
-Patchli follows a robust client-server architecture. The **Control Plane** manages the fleet state and orchestrates jobs, while lightweight **Agents** execute tasks locally on each node.
+rpatch follows a robust client-server architecture. The **Control Plane** manages the fleet state and orchestrates jobs, while lightweight **Agents** execute tasks locally on each node.
 
 ```mermaid
 graph TD
@@ -26,9 +28,9 @@ graph TD
     end
 
     subgraph "Managed Fleet (Agents)"
-        Agent1[Patchli Agent 1]
-        Agent2[Patchli Agent 2]
-        AgentN[Patchli Agent N]
+        Agent1[rpatch Agent 1]
+        Agent2[rpatch Agent 2]
+        AgentN[rpatch Agent N]
     end
 
     Agent1 <--> WS
@@ -59,7 +61,7 @@ Agents register themselves securely using an HMAC-signed setup script. Once regi
 
 ```mermaid
 sequenceDiagram
-    participant A as Patchli Agent
+    participant A as rpatch Agent
     participant S as Control Plane
     participant DB as Database
 
@@ -177,7 +179,7 @@ Navigate to `http://localhost:8080/` and log in.
 1. Go to the **Add Agent** section.
 2. Select your OS (Linux, Alpine, or Windows).
 3. Copy the generated one-liner and run it on your target node with
-   `PATCHLI_ADMIN_TOKEN` set to the server's `ADMIN_TOKEN` (the setup endpoint
+   `RPATCH_ADMIN_TOKEN` set to the server's `ADMIN_TOKEN` (the setup endpoint
    requires it). Each generated script registers a single node.
 4. The node will appear in the dashboard automatically.
 
@@ -188,10 +190,10 @@ Navigate to `http://localhost:8080/` and log in.
 ### Local Setup
 ```bash
 # Run server
-cd server && go run ./cmd/patchli-server/main.go
+cd server && go run ./cmd/rpatch-server/main.go
 
 # Run agent
-cd agent && go run ./cmd/patchli-agent
+cd agent && go run ./cmd/rpatch-agent
 ```
 
 ### Testing & Quality
@@ -208,5 +210,5 @@ gosec ./...
 ---
 
 ## 📄 License
-Patchli is released under the [MIT License](LICENSE).
+rpatch is released under the [MIT License](LICENSE).
 

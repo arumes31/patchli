@@ -21,7 +21,7 @@ func main() {
 }
 
 func parseArgs(args []string) string {
-	agentPath := "/usr/local/bin/patchli-agent"
+	agentPath := "/usr/local/bin/rpatch-agent"
 	if len(args) > 1 {
 		agentPath = args[1]
 	}
@@ -30,7 +30,7 @@ func parseArgs(args []string) string {
 
 func runWatchdog(agentPath string, sigChan <-chan os.Signal) {
 	// #nosec G706 -- %q escapes newlines and other control characters in the local command-line argument.
-	log.Printf("Starting Patchli Watchdog for %q", agentPath)
+	log.Printf("Starting rpatch Watchdog for %q", agentPath)
 
 	for {
 		cmd := execCommand(agentPath)

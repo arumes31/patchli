@@ -17,7 +17,7 @@ import (
 var CommandPubKey = os.Getenv("COMMAND_PUB_KEY")
 
 // commandSignaturePrefix must match the server (internal/cmdsign).
-const commandSignaturePrefix = "patchli-command-v1\n"
+const commandSignaturePrefix = "rpatch-command-v1\n"
 
 // commandSignedFields mirrors the server's canonical command encoding. Field
 // order and JSON names must stay identical on both sides.

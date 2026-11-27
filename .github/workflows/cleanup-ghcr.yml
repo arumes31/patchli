@@ -28,7 +28,7 @@ jobs:
           args: >-
             --account=user
             --token=${{ secrets.GITHUB_TOKEN }}
-            --image-names=patchli/server,patchli/agent
+            --image-names=rpatch/server,rpatch/agent
             --image-tags=
             --shas-to-skip=
             --tag-selection=untagged

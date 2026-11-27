@@ -10,17 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/arumes31/patchli/server/internal/api"
-	"github.com/arumes31/patchli/server/internal/auth"
-	"github.com/arumes31/patchli/server/internal/cmdsign"
-	"github.com/arumes31/patchli/server/internal/db"
-	"github.com/arumes31/patchli/server/internal/orchestration"
-	"github.com/arumes31/patchli/server/internal/websocket"
-	"github.com/arumes31/patchli/server/static"
+	"github.com/arumes31/rpatch/server/internal/api"
+	"github.com/arumes31/rpatch/server/internal/auth"
+	"github.com/arumes31/rpatch/server/internal/cmdsign"
+	"github.com/arumes31/rpatch/server/internal/db"
+	"github.com/arumes31/rpatch/server/internal/orchestration"
+	"github.com/arumes31/rpatch/server/internal/websocket"
+	"github.com/arumes31/rpatch/server/static"
 )
 
 func main() {
-	log.Println("Starting Patchli Server (Control Plane)...")
+	log.Println("Starting rpatch Server (Control Plane)...")
 	auth.InitSecrets()
 	websocket.InitSecrets()
 	if err := cmdsign.Init(); err != nil {

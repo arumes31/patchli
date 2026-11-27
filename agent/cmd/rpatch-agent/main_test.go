@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/arumes31/patchli/agent/internal/state"
-	"github.com/arumes31/patchli/agent/internal/updater"
+	"github.com/arumes31/rpatch/agent/internal/state"
+	"github.com/arumes31/rpatch/agent/internal/updater"
 )
 
 type mockPM struct{}

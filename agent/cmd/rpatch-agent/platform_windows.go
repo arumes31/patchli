@@ -42,7 +42,7 @@ func restartWindowsAgent() ([]byte, error) {
 	// The script is constant. Neither PATH-derived executables nor dynamic data
 	// are interpolated into a shell command. The detached helper survives stop.
 	// #nosec G204 -- Windows system directory API selects PowerShell; all arguments and the service name are constant.
-	helper := exec.Command(executable, "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 2; Restart-Service -Name patchli-agent")
+	helper := exec.Command(executable, "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference='Stop'; Start-Sleep -Seconds 2; Restart-Service -Name rpatch-agent")
 	helper.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.DETACHED_PROCESS | windows.CREATE_NO_WINDOW, HideWindow: true}
 	if err := helper.Start(); err != nil {
 		return nil, err

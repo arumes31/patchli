@@ -45,7 +45,7 @@ func TestParseArgs(t *testing.T) {
 		args     []string
 		expected string
 	}{
-		{[]string{"watchdog"}, "/usr/local/bin/patchli-agent"},
+		{[]string{"watchdog"}, "/usr/local/bin/rpatch-agent"},
 		{[]string{"watchdog", "/custom/path"}, "/custom/path"},
 	}
 

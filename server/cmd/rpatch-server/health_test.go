@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/rpatch/server/internal/db"
 )
 
 func TestHealthReflectsDatabaseAvailability(t *testing.T) {

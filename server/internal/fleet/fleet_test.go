@@ -3,7 +3,7 @@ package fleet
 import (
 	"testing"
 
-	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/models"
 	"github.com/gorilla/websocket"
 )
 

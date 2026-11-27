@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arumes31/patchli/server/internal/auth"
-	"github.com/arumes31/patchli/server/internal/fleet"
-	"github.com/arumes31/patchli/server/internal/proxy"
-	"github.com/arumes31/patchli/server/static"
+	"github.com/arumes31/rpatch/server/internal/auth"
+	"github.com/arumes31/rpatch/server/internal/fleet"
+	"github.com/arumes31/rpatch/server/internal/proxy"
+	"github.com/arumes31/rpatch/server/static"
 )
 
 var validGroupRegex = regexp.MustCompile("^[a-zA-Z0-9._-]+$")
@@ -188,7 +188,7 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 func generateLinuxScript(group, ts, nonce, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/bash
 set -e
-echo "--- Patchli Agent Setup (Linux) ---"
+echo "--- rpatch Agent Setup (Linux) ---"
 GROUP='%s'
 TIMESTAMP='%s'
 NONCE='%s'
@@ -196,20 +196,20 @@ SIGNATURE='%s'
 SERVER_URL='%s'
 
 echo "1. Creating configuration..."
-mkdir -p /etc/patchli
-cat <<EOF > /etc/patchli/config.yaml
+mkdir -p /etc/rpatch
+cat <<EOF > /etc/rpatch/config.yaml
 server_url: $SERVER_URL
 group: $GROUP
 EOF
 
 echo "2. Installing systemd service..."
-cat <<EOF > /etc/systemd/system/patchli-agent.service
+cat <<EOF > /etc/systemd/system/rpatch-agent.service
 [Unit]
-Description=Patchli Patch Management Agent
+Description=rpatch Patch Management Agent
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/patchli-agent
+ExecStart=/usr/local/bin/rpatch-agent
 Restart=always
 User=root
 
@@ -218,17 +218,17 @@ WantedBy=multi-user.target
 EOF
 
 # systemctl daemon-reload
-# systemctl enable patchli-agent
-# systemctl start patchli-agent
+# systemctl enable rpatch-agent
+# systemctl start rpatch-agent
 
-echo "SUCCESS: Patchli Agent configured for group: $GROUP"
+echo "SUCCESS: rpatch Agent configured for group: $GROUP"
 `, escapeBash(group), escapeBash(ts), escapeBash(nonce), escapeBash(sig), escapeBash(url))
 }
 
 func generateAlpineScript(group, ts, nonce, sig, url string) string {
 	return fmt.Sprintf(`#!/bin/sh
 set -e
-echo "--- Patchli Agent Setup (Alpine) ---"
+echo "--- rpatch Agent Setup (Alpine) ---"
 GROUP='%s'
 TIMESTAMP='%s'
 NONCE='%s'
@@ -236,29 +236,29 @@ SIGNATURE='%s'
 SERVER_URL='%s'
 
 echo "1. Creating configuration..."
-mkdir -p /etc/patchli
-cat <<EOF > /etc/patchli/config.yaml
+mkdir -p /etc/rpatch
+cat <<EOF > /etc/rpatch/config.yaml
 server_url: $SERVER_URL
 group: $GROUP
 EOF
 
 echo "2. Installing OpenRC service..."
-cat <<EOF > /etc/init.d/patchli-agent
+cat <<EOF > /etc/init.d/rpatch-agent
 #!/sbin/openrc-run
-name="patchli-agent"
-command="/usr/local/bin/patchli-agent"
+name="rpatch-agent"
+command="/usr/local/bin/rpatch-agent"
 command_background="yes"
-pidfile="/run/patchli-agent.pid"
+pidfile="/run/rpatch-agent.pid"
 EOF
-chmod +x /etc/init.d/patchli-agent
+chmod +x /etc/init.d/rpatch-agent
 
-echo "SUCCESS: Patchli Agent configured for group: $GROUP"
+echo "SUCCESS: rpatch Agent configured for group: $GROUP"
 `, escapeBash(group), escapeBash(ts), escapeBash(nonce), escapeBash(sig), escapeBash(url))
 }
 
 func generateWindowsScript(group, ts, nonce, sig, url string) string {
 	return fmt.Sprintf(`$ErrorActionPreference = "Stop"
-Write-Host "--- Patchli Agent Setup (Windows) ---"
+Write-Host "--- rpatch Agent Setup (Windows) ---"
 $Group = '%s'
 $Timestamp = '%s'
 $Nonce = '%s'
@@ -266,14 +266,14 @@ $Signature = '%s'
 $ServerUrl = '%s'
 
 Write-Host "1. Creating configuration..."
-$ConfigDir = "C:\ProgramData\Patchli"
+$ConfigDir = "C:\ProgramData\rpatch"
 if (!(Test-Path -Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir | Out-Null }
 @"
 server_url: $ServerUrl
 group: $Group
 "@ | Out-File -FilePath "$ConfigDir\config.yaml" -Encoding UTF8
 
-Write-Host "SUCCESS: Patchli Agent configured for group: $Group"
+Write-Host "SUCCESS: rpatch Agent configured for group: $Group"
 `, escapePowerShell(group), escapePowerShell(ts), escapePowerShell(nonce), escapePowerShell(sig), escapePowerShell(url))
 }
 

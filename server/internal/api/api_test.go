@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/arumes31/patchli/server/internal/auth"
+	"github.com/arumes31/rpatch/server/internal/auth"
 )
 
 func TestMain(m *testing.M) {

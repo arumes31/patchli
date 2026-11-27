@@ -1,4 +1,4 @@
-module github.com/arumes31/patchli/agent
+module github.com/arumes31/rpatch/agent
 
 go 1.27.4
 

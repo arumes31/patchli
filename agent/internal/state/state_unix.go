@@ -3,5 +3,5 @@
 package state
 
 func init() {
-	stateFile = "/var/lib/patchli/state.json"
+	stateFile = "/var/lib/rpatch/state.json"
 }

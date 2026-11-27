@@ -58,7 +58,7 @@ func TestWindowsManager(t *testing.T) {
 		}
 		found := false
 		for _, e := range captured.Env {
-			if strings.HasPrefix(e, "PATCHLI_PACKAGES_JSON=") && strings.Contains(e, "KB1") {
+			if strings.HasPrefix(e, "RPATCH_PACKAGES_JSON=") && strings.Contains(e, "KB1") {
 				found = true
 			}
 		}

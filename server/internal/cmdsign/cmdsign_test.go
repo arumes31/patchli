@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/arumes31/patchli/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/models"
 )
 
 func TestSignDisabledLeavesCommandUnchanged(t *testing.T) {
@@ -79,13 +79,13 @@ func TestInit(t *testing.T) {
 }
 
 // TestMessageWireFormat pins the canonical encoding shared with the agent
-// (agent/cmd/patchli-agent/command_auth.go); both sides must produce identical bytes.
+// (agent/cmd/rpatch-agent/command_auth.go); both sides must produce identical bytes.
 func TestMessageWireFormat(t *testing.T) {
 	msg, err := Message(models.CommandPayload{ID: "job", Action: "apply_updates", Packages: []string{"a"}, PrePatchScript: "pre", PostPatchScript: "post", HealthCheckCommand: "hc", NodeID: "n", ExpiresAt: 42})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "patchli-command-v1\n" + `{"id":"job","action":"apply_updates","packages":["a"],"pre_patch_script":"pre","post_patch_script":"post","health_check_command":"hc","node_id":"n","expires_at":42}`
+	want := "rpatch-command-v1\n" + `{"id":"job","action":"apply_updates","packages":["a"],"pre_patch_script":"pre","post_patch_script":"post","health_check_command":"hc","node_id":"n","expires_at":42}`
 	if string(msg) != want {
 		t.Fatalf("got %q\nwant %q", msg, want)
 	}

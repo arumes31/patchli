@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/arumes31/patchli/server/internal/auth"
-	"github.com/arumes31/patchli/server/internal/db"
+	"github.com/arumes31/rpatch/server/internal/auth"
+	"github.com/arumes31/rpatch/server/internal/db"
 )
 
 func TestHandleAgentLogin_Unauthorized(t *testing.T) {
@@ -94,7 +94,7 @@ func TestHandleAgentLogin_Success(t *testing.T) {
 
 func expectNodeLock(mock sqlmock.Sqlmock, mac string) {
 	mock.ExpectBegin()
-	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("patchli-node:" + mac).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("SELECT pg_advisory_xact_lock").WithArgs("rpatch-node:" + mac).WillReturnResult(sqlmock.NewResult(0, 0))
 }
 
 func TestHandleAgentLoginRejectsEnrolledNode(t *testing.T) {

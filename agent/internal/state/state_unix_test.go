@@ -9,7 +9,7 @@ import (
 )
 
 func TestDefaultStateFileUnix(t *testing.T) {
-	expected := "/var/lib/patchli/state.json"
+	expected := "/var/lib/rpatch/state.json"
 	if stateFile != expected {
 		t.Errorf("expected stateFile to be %s, got %s", expected, stateFile)
 	}

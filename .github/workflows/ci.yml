@@ -134,11 +134,11 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
-          POSTGRES_DB: patchli
+          POSTGRES_DB: rpatch
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d patchli"
+          --health-cmd "pg_isready -U postgres -d rpatch"
           --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,10 +157,10 @@ jobs:
         run: go test -tags integration ./internal/db -run TestMigrations -count=1
         working-directory: server
         env:
-          PATCHLI_MIGRATION_TEST_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
+          RPATCH_MIGRATION_TEST_URL: postgres://postgres:password@localhost:5432/rpatch?sslmode=disable
 
       - name: Build Server
-        run: go build -o server_bin ./cmd/patchli-server/main.go
+        run: go build -o server_bin ./cmd/rpatch-server/main.go
         working-directory: server
 
       - name: Run Server in Background
@@ -182,7 +182,7 @@ jobs:
             sleep 2
           done
         env:
-          DB_URL: postgres://postgres:password@localhost:5432/patchli?sslmode=disable
+          DB_URL: postgres://postgres:password@localhost:5432/rpatch?sslmode=disable
           JWT_SECRET: "ci-only-jwt-secret-not-used-in-production"
           REGISTRATION_SECRET: "ci-only-registration-secret-not-used-in-production"
 

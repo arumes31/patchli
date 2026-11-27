@@ -18,9 +18,9 @@ func init() {
 		if pd == "" {
 			pd = `C:\ProgramData`
 		}
-		idFile = filepath.Join(pd, "Patchli", "node_id")
+		idFile = filepath.Join(pd, "rpatch", "node_id")
 	} else {
-		idFile = "/etc/patchli/node_id"
+		idFile = "/etc/rpatch/node_id"
 	}
 }
 

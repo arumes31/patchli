@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/arumes31/patchli/server/internal/auth"
-	"github.com/arumes31/patchli/server/internal/db"
-	"github.com/arumes31/patchli/server/internal/fleet"
-	"github.com/arumes31/patchli/server/internal/models"
-	"github.com/arumes31/patchli/server/internal/proxy"
+	"github.com/arumes31/rpatch/server/internal/auth"
+	"github.com/arumes31/rpatch/server/internal/db"
+	"github.com/arumes31/rpatch/server/internal/fleet"
+	"github.com/arumes31/rpatch/server/internal/models"
+	"github.com/arumes31/rpatch/server/internal/proxy"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 )

@@ -1,4 +1,4 @@
-module github.com/arumes31/patchli/server
+module github.com/arumes31/rpatch/server
 
 go 1.27.4
 
