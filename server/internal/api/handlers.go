@@ -275,13 +275,15 @@ func HandleStream(w http.ResponseWriter, r *http.Request) {
 	<-r.Context().Done()
 }
 
-var agentBinary = regexp.MustCompile(`^rpatch-agent-linux-(amd64|arm64)$`)
-
-// HandleAgentDownload serves agent binaries built into the server image
-// (AGENT_DIR, default /app/agents) so agents always match the server.
 func HandleAgentDownload(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("file")
-	if !agentBinary.MatchString(name) {
+	// Only these constant names are served; nothing from the request reaches the file system.
+	var name string
+	switch r.PathValue("file") {
+	case "rpatch-agent-linux-amd64":
+		name = "rpatch-agent-linux-amd64"
+	case "rpatch-agent-linux-arm64":
+		name = "rpatch-agent-linux-arm64"
+	default:
 		http.NotFound(w, r)
 		return
 	}
