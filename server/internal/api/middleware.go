@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arumes31/rpatch/server/internal/proxy"
 )
 
 // AuthMiddleware protects admin endpoints. It accepts a Bearer token matching
@@ -102,15 +104,28 @@ func (rl *RateLimiter) allow(ip string) bool {
 // Middleware rejects requests above the limit with 429.
 func (rl *RateLimiter) Middleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
-		if !rl.allow(ip) {
+		if !rl.allow(clientIP(r)) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "Too many requests", http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
 	}
+}
+
+// clientIP keys rate limits per client. Behind TRUSTED_PROXY every request
+// arrives from the proxy, so the first X-Forwarded-For entry is used there.
+// shortcut: that entry is client-controlled, so a client can dodge its own
+// limit but cannot exhaust another client's; fine while ADMIN_TOKEN is high-entropy.
+func clientIP(r *http.Request) string {
+	if proxy.IsTrusted(r.RemoteAddr) {
+		if first, _, _ := strings.Cut(r.Header.Get("X-Forwarded-For"), ","); strings.TrimSpace(first) != "" {
+			return strings.TrimSpace(first)
+		}
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
 }

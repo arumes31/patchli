@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/arumes31/rpatch/server/internal/auth"
 )
@@ -122,5 +123,32 @@ func TestRequireAdminPage(t *testing.T) {
 	RequireAdminPage(okHandler)(rr, req)
 	if rr.Code != http.StatusOK {
 		t.Errorf("with session: got %d", rr.Code)
+	}
+}
+
+func TestAdminLoginRateLimit(t *testing.T) {
+	auth.SetTestSecrets()
+	t.Setenv("ADMIN_TOKEN", "secret-admin")
+	t.Setenv("TRUSTED_PROXY", "10.0.0.1")
+	h := NewRateLimiter(5, time.Minute).Middleware(HandleAdminLogin)
+	try := func(fwd string) int {
+		req := httptest.NewRequest(http.MethodPost, "http://rpatch.test/api/v1/admin/login", strings.NewReader(`{"token":"x"}`))
+		req.RemoteAddr = "10.0.0.1:5555"
+		req.Header.Set("X-Forwarded-For", fwd)
+		req.Header.Set("Origin", "http://rpatch.test")
+		rr := httptest.NewRecorder()
+		h(rr, req)
+		return rr.Code
+	}
+	for i := 0; i < 5; i++ {
+		if c := try("1.1.1.1"); c != http.StatusUnauthorized {
+			t.Fatalf("attempt %d: got %d", i+1, c)
+		}
+	}
+	if c := try("1.1.1.1, 10.0.0.1"); c != http.StatusTooManyRequests {
+		t.Errorf("6th attempt: got %d, want 429", c)
+	}
+	if c := try("2.2.2.2"); c != http.StatusUnauthorized {
+		t.Errorf("another client behind the proxy must not be limited, got %d", c)
 	}
 }

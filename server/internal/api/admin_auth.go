@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/arumes31/rpatch/server/internal/auth"
-	"github.com/arumes31/rpatch/server/internal/proxy"
 )
 
 // SessionCookie holds the admin UI session.
@@ -35,14 +34,14 @@ func sameOrigin(r *http.Request) bool {
 	return err == nil && u.Host == r.Host
 }
 
-func setSessionCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
+func setSessionCookie(w http.ResponseWriter, value string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     SessionCookie,
 		Value:    value,
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   proxy.Scheme(r) == "https",
+		Secure:   true, // browsers also accept Secure cookies on http://localhost
 		SameSite: http.SameSiteStrictMode,
 	})
 }
@@ -73,7 +72,7 @@ func HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal error", http.StatusInternalServerError)
 		return
 	}
-	setSessionCookie(w, r, session, int(auth.AdminSessionDuration.Seconds()))
+	setSessionCookie(w, session, int(auth.AdminSessionDuration.Seconds()))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -84,7 +83,7 @@ func HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// shortcut: the session JWT stays valid until expiry (12h) if copied; add a server-side revocation list if sessions must die on logout.
-	setSessionCookie(w, r, "", -1)
+	setSessionCookie(w, "", -1)
 	w.WriteHeader(http.StatusNoContent)
 }
 
