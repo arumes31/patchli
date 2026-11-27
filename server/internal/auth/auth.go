@@ -188,3 +188,36 @@ func ValidateRegistration(group, timestamp, nonce, signature string) bool {
 
 	return timestampValid && signatureValid && nonce != ""
 }
+
+const (
+	// AdminAudience and TokenTypeAdmin mark browser sessions of the admin UI.
+	// The explicit typ makes ValidateRefreshToken reject them (it only accepts
+	// tokens without typ for legacy refresh tokens).
+	AdminAudience        = "rpatch-admin"
+	TokenTypeAdmin       = "admin"
+	AdminSessionDuration = 12 * time.Hour
+)
+
+// NewAdminSession returns a signed admin session token.
+func NewAdminSession() (string, error) {
+	now := time.Now()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub": "admin",
+		"aud": AdminAudience,
+		"typ": TokenTypeAdmin,
+		"jti": randomHex(16),
+		"iat": now.Unix(),
+		"exp": now.Add(AdminSessionDuration).Unix(),
+	})
+	return token.SignedString(jwtSecret)
+}
+
+// ValidAdminSession reports whether tokenStr is an unexpired admin session.
+func ValidAdminSession(tokenStr string) bool {
+	claims, err := ValidateToken(tokenStr)
+	if err != nil || (*claims)["typ"] != TokenTypeAdmin {
+		return false
+	}
+	aud, err := claims.GetAudience()
+	return err == nil && len(aud) == 1 && aud[0] == AdminAudience
+}

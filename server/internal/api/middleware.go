@@ -1,38 +1,41 @@
 package api
 
 import (
-	"crypto/subtle"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/arumes31/rpatch/server/internal/proxy"
 )
 
-// AuthMiddleware protects endpoints by requiring a Bearer token matching ADMIN_TOKEN.
+// AuthMiddleware protects admin endpoints. It accepts a Bearer token matching
+// ADMIN_TOKEN (scripts) or an admin session cookie (browser UI). Cookie
+// requests that change state must come from the same origin.
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		adminToken := os.Getenv("ADMIN_TOKEN")
-
-		// If ADMIN_TOKEN is not set, we default to unauthorized for safety.
-		if adminToken == "" {
-			http.Error(w, "Unauthorized - Server Configuration Error", http.StatusUnauthorized)
+		if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+			if os.Getenv("ADMIN_TOKEN") == "" {
+				http.Error(w, "Unauthorized - Server Configuration Error", http.StatusUnauthorized)
+				return
+			}
+			if !validAdminToken(strings.TrimPrefix(authHeader, "Bearer ")) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
 			return
 		}
-
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
+		if !hasAdminSession(r) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(token), []byte(adminToken)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-
 		next.ServeHTTP(w, r)
 	}
 }
@@ -101,15 +104,28 @@ func (rl *RateLimiter) allow(ip string) bool {
 // Middleware rejects requests above the limit with 429.
 func (rl *RateLimiter) Middleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
-		if !rl.allow(ip) {
+		if !rl.allow(clientIP(r)) {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "Too many requests", http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
 	}
+}
+
+// clientIP keys rate limits per client. Behind TRUSTED_PROXY every request
+// arrives from the proxy, so the last X-Forwarded-For entry, which the proxy
+// appended itself, is used there; earlier entries are client-supplied.
+func clientIP(r *http.Request) string {
+	if proxy.IsTrusted(r.RemoteAddr) {
+		xff := r.Header.Get("X-Forwarded-For")
+		if last := strings.TrimSpace(xff[strings.LastIndex(xff, ",")+1:]); last != "" {
+			return last
+		}
+	}
+	ip, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return ip
 }
