@@ -81,7 +81,7 @@ sequenceDiagram
 - **🛡️ Resilience**: Agents reconnect on their own, keep job results until the controller received them, and report jobs interrupted by a restart.
 - **📦 Multi-OS Support**: Native support for **APT** (Debian/Ubuntu), **APK** (Alpine), **DNF/YUM** (RHEL/Rocky), **Pacman** (Arch), **Zypper** (SUSE), and **WUA** (Windows).
 - **🔒 Security**: HMAC-based zero-touch registration, JWT persistent authentication, and pre-patch lock checks.
-- **🛠️ Orchestration**: Maintenance windows, pre/post-patch scripts, and remote health checks.
+- **🛠️ Orchestration**: Daily patch window, one host at a time, reboot only when required. Agents only run fixed package-manager commands, never shell code from the network.
 - **📈 Observability**: Real-time log streaming via WebSockets and detailed fleet metrics.
 
 ---

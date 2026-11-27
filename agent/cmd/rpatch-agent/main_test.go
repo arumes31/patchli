@@ -223,3 +223,21 @@ func TestInterruptedJobIsReported(t *testing.T) {
 		t.Fatalf("got %+v", r)
 	}
 }
+
+func TestRemoteScriptsAreNeverExecuted(t *testing.T) {
+	useTempResults(t)
+	marker := t.TempDir() + "/ran"
+	oldSave, oldClear := saveStateFunc, clearStateFunc
+	t.Cleanup(func() { saveStateFunc, clearStateFunc = oldSave, oldClear })
+	saveStateFunc = func(state.State) error { return nil }
+	clearStateFunc = func() error { return nil }
+	script := "touch " + marker
+	executeCommand(context.Background(), &mockPM{}, CommandPayload{ID: "job-s", Action: "apply_updates",
+		PrePatchScript: script, PostPatchScript: script, HealthCheckCommand: script})
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("a script from the command was executed")
+	}
+	if r := readResults(t)["job-s"]; !r.Success {
+		t.Fatalf("patch with ignored scripts must still succeed: %+v", r)
+	}
+}

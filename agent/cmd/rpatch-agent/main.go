@@ -29,17 +29,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// shellCommandContext returns an exec.Cmd that runs a shell script cross-platform.
-// On Windows it uses cmd.exe /c, on Unix it uses sh -c.
-func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
-	if runtime.GOOS == "windows" {
-		// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
-		return exec.CommandContext(ctx, "cmd.exe", "/c", script)
-	}
-	// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
-	return exec.CommandContext(ctx, "sh", "-c", script)
-}
-
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
 
 // Version is the agent release version, set at build time with

@@ -1,9 +1,11 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -112,6 +114,114 @@ func TestHandleSettingsValidation(t *testing.T) {
 		HandleSettings(rr, httptest.NewRequest(http.MethodPut, "/api/v1/settings", strings.NewReader(body)))
 		if rr.Code != want || (want == http.StatusNoContent) != (saved != nil) {
 			t.Errorf("%s: got %d (saved=%v)", body, rr.Code, saved != nil)
+		}
+	}
+}
+
+func TestHandleNodePolicy(t *testing.T) {
+	old := setNodePolicy
+	t.Cleanup(func() { setNodePolicy = old })
+	var got [3]any
+	setNodePolicy = func(id string, autoReboot, excluded bool, slot int) error {
+		if id == "missing" {
+			return sql.ErrNoRows
+		}
+		got = [3]any{autoReboot, excluded, slot}
+		return nil
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /api/v1/nodes/{id}/policy", HandleNodePolicy)
+	do := func(id, body string) int {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/api/v1/nodes/"+id+"/policy", strings.NewReader(body)))
+		return rr.Code
+	}
+	if c := do("n1", `{"auto_reboot":false,"excluded":true,"slot":999}`); c != http.StatusNoContent || got != [3]any{false, true, 999} {
+		t.Errorf("save: %d %v", c, got)
+	}
+	if c := do("n1", `{"slot":-1}`); c != http.StatusBadRequest {
+		t.Errorf("negative slot: %d", c)
+	}
+	if c := do("missing", `{"slot":1}`); c != http.StatusNotFound {
+		t.Errorf("unknown node: %d", c)
+	}
+}
+
+func TestHandleJobsAndJob(t *testing.T) {
+	oldList, oldGet := listJobs, getJob
+	t.Cleanup(func() { listJobs, getJob = oldList, oldGet })
+	var gotNode string
+	var gotLimit int
+	listJobs = func(node string, limit int) ([]db.Job, error) { gotNode, gotLimit = node, limit; return nil, nil }
+	getJob = func(id string) (db.Job, error) {
+		if id == "j1" {
+			return db.Job{ID: "j1", Output: "apt output"}, nil
+		}
+		return db.Job{}, sql.ErrNoRows
+	}
+	rr := httptest.NewRecorder()
+	HandleJobs(rr, httptest.NewRequest(http.MethodGet, "/api/v1/jobs?node=n1&limit=9999", nil))
+	if rr.Body.String() != "[]\n" || gotNode != "n1" || gotLimit != 100 {
+		t.Errorf("jobs: %q node=%s limit=%d", rr.Body.String(), gotNode, gotLimit)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v1/jobs/{id}", HandleJob)
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/j1", nil))
+	if !strings.Contains(rr.Body.String(), "apt output") {
+		t.Errorf("job: %s", rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/jobs/nope", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Errorf("missing job: %d", rr.Code)
+	}
+}
+
+func TestHandleSettingsGetAndWindow(t *testing.T) {
+	old := getSettings
+	t.Cleanup(func() { getSettings = old })
+	getSettings = func() (db.Settings, error) {
+		return db.Settings{WindowStart: "03:00", WindowEnd: "05:30", Timezone: "Europe/Vienna", Enabled: true}, nil
+	}
+	rr := httptest.NewRecorder()
+	HandleSettings(rr, httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
+	if !strings.Contains(rr.Body.String(), `"timezone":"Europe/Vienna"`) {
+		t.Errorf("settings: %s", rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	HandleWindowStatus(rr, httptest.NewRequest(http.MethodGet, "/api/v1/window", nil))
+	if !strings.Contains(rr.Body.String(), `"running":false`) {
+		t.Errorf("window: %s", rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	HandleWindowRun(rr, httptest.NewRequest(http.MethodPost, "/api/v1/window/run", nil))
+	first := rr.Code
+	rr = httptest.NewRecorder()
+	HandleWindowRun(rr, httptest.NewRequest(http.MethodPost, "/api/v1/window/run", nil))
+	if first != http.StatusAccepted || rr.Code != http.StatusConflict {
+		t.Errorf("run now: %d then %d", first, rr.Code)
+	}
+}
+
+func TestHandleAgentDownload(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/rpatch-agent-linux-amd64", []byte("ELF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENT_DIR", dir)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /download/{file}", HandleAgentDownload)
+	for path, want := range map[string]int{
+		"/download/rpatch-agent-linux-amd64": http.StatusOK,
+		"/download/rpatch-agent-linux-arm64": http.StatusNotFound, // not built
+		"/download/agent.manifest":           http.StatusNotFound,
+		"/download/..%2Fsecret":              http.StatusNotFound,
+	} {
+		rr := httptest.NewRecorder()
+		mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+		if rr.Code != want {
+			t.Errorf("%s: %d want %d", path, rr.Code, want)
 		}
 	}
 }

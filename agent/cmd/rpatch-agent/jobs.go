@@ -208,52 +208,26 @@ func runAction(ctx context.Context, pm updater.PackageManager, cmd CommandPayloa
 	return updater.UpdateResult{}, fmt.Errorf("unknown action %q", cmd.Action)
 }
 
+// applyUpdates runs the package manager only. Scripts in the command
+// (pre/post-patch, health check) are ignored: the agent never executes shell
+// code received from the network.
 func applyUpdates(ctx context.Context, pm updater.PackageManager, cmd CommandPayload) (updater.UpdateResult, error) {
+	if cmd.PrePatchScript != "" || cmd.PostPatchScript != "" || cmd.HealthCheckCommand != "" {
+		log.Printf("Job %q: ignoring scripts; the agent does not run remote shell code", cmd.ID)
+	}
 	if err := pm.PreFlightCheck(ctx); err != nil {
 		return updater.UpdateResult{}, fmt.Errorf("pre-flight check failed: %w", err)
 	}
-	var out strings.Builder
-	runScript := func(name, script string) error {
-		if script == "" {
-			return nil
-		}
-		o, err := shellCommandContext(ctx, script).CombinedOutput()
-		fmt.Fprintf(&out, "--- %s ---\n%s\n", name, o)
-		if err != nil {
-			return fmt.Errorf("%s failed: %w", name, err)
-		}
-		return nil
-	}
-	if err := runScript("pre-patch script", cmd.PrePatchScript); err != nil {
-		return updater.UpdateResult{Output: out.String()}, err
-	}
-
 	if err := saveStateFunc(state.State{JobID: cmd.ID, Action: cmd.Action, Status: "running"}); err != nil {
 		log.Printf("Failed to save state: %v", err)
 	}
 	defer func() { _ = clearStateFunc() }()
 
 	res, err := pm.ApplyUpdates(ctx, cmd.Packages)
-	out.WriteString(res.Output)
-	res.Output = out.String()
-	if err != nil {
-		return res, err
+	if err == nil && !res.Success {
+		err = errors.New("package manager reported failure")
 	}
-	if !res.Success {
-		return res, errors.New("package manager reported failure")
-	}
-	for _, s := range []struct{ name, script string }{
-		{"post-patch script", cmd.PostPatchScript},
-		{"health check", cmd.HealthCheckCommand},
-	} {
-		if err := runScript(s.name, s.script); err != nil {
-			res.Output = out.String()
-			res.Success = false
-			return res, err
-		}
-	}
-	res.Output = out.String()
-	return res, nil
+	return res, err
 }
 
 // hostInfo reads OS release, kernel and boot ID. The boot ID changes on

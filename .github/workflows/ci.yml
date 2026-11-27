@@ -97,6 +97,19 @@ jobs:
     name: Unit Tests & Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Database code is covered by integration tests against a real PostgreSQL.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: rpatch
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rpatch"
+          --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,8 +124,10 @@ jobs:
             agent/go.sum
 
       - name: Test Server with Coverage
+        env:
+          RPATCH_MIGRATION_TEST_URL: postgres://postgres:password@localhost:5432/rpatch?sslmode=disable
         run: |
-          go test -v -coverprofile=coverage.out ./...
+          go test -v -tags integration -p 1 -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out -o=coverage.out
           # Feature 85: Enforce 80% coverage
           total_coverage=$(grep total coverage.out | awk '{print $3}' | sed 's/%//')

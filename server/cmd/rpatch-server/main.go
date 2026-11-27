@@ -51,55 +51,7 @@ func main() {
 		log.Println("Patch scheduler started.")
 	}
 
-	mux := http.NewServeMux()
-
-	// Health check
-	mux.HandleFunc("/health", handleHealth)
-
-	// Use embedded FS for static files
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.FS))))
-	// Pages reference /assets/... and /favicon.png at the root.
-	mux.Handle("/assets/", http.FileServer(http.FS(static.FS)))
-	mux.Handle("/favicon.png", http.FileServer(http.FS(static.FS)))
-
-	// Dashboard UI
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		api.RequireAdminPage(servePage("index.html"))(w, r)
-	})
-	mux.HandleFunc("/login", servePage("login.html"))
-	mux.HandleFunc("GET /download/{file}", api.HandleAgentDownload)
-	mux.HandleFunc("/setup", api.RequireAdminPage(api.ServeSetupUI))
-
-	// API v1
-	mux.HandleFunc("/api/v1/nodes", api.AuthMiddleware(api.HandleNodes))
-	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
-	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
-	mux.HandleFunc("/api/v1/nodes/revoke", api.AuthMiddleware(api.HandleRevokeEnrollment))
-	mux.HandleFunc("POST /api/v1/nodes/{id}/action", api.AuthMiddleware(api.HandleNodeAction))
-	mux.HandleFunc("PUT /api/v1/nodes/{id}/policy", api.AuthMiddleware(api.HandleNodePolicy))
-	mux.HandleFunc("GET /api/v1/jobs", api.AuthMiddleware(api.HandleJobs))
-	mux.HandleFunc("GET /api/v1/jobs/{id}", api.AuthMiddleware(api.HandleJob))
-	mux.HandleFunc("GET /api/v1/settings", api.AuthMiddleware(api.HandleSettings))
-	mux.HandleFunc("PUT /api/v1/settings", api.AuthMiddleware(api.HandleSettings))
-	mux.HandleFunc("GET /api/v1/window", api.AuthMiddleware(api.HandleWindowStatus))
-	mux.HandleFunc("POST /api/v1/window/run", api.AuthMiddleware(api.HandleWindowRun))
-
-	// Agent Auth (rate limited per client IP)
-	authLimiter := api.NewRateLimiter(30, time.Minute)
-	mux.HandleFunc("/api/v1/auth/login", authLimiter.Middleware(api.HandleAgentLogin))
-	mux.HandleFunc("/api/v1/auth/refresh", authLimiter.Middleware(api.HandleAgentRefresh))
-
-	// Admin UI session
-	adminLimiter := api.NewRateLimiter(5, time.Minute)
-	mux.HandleFunc("/api/v1/admin/login", adminLimiter.Middleware(api.HandleAdminLogin))
-	mux.HandleFunc("/api/v1/admin/logout", api.HandleAdminLogout)
-
-	// WebSocket
-	mux.HandleFunc("/ws", websocket.HandleWebSocket)
+	mux := newMux()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -188,4 +140,58 @@ func servePage(name string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(data)
 	}
+}
+
+// newMux registers every route; admin routes are wrapped in their auth checks.
+func newMux() *http.ServeMux {
+	mux := http.NewServeMux()
+
+	// Health check
+	mux.HandleFunc("/health", handleHealth)
+
+	// Use embedded FS for static files
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.FS))))
+	// Pages reference /assets/... and /favicon.png at the root.
+	mux.Handle("/assets/", http.FileServer(http.FS(static.FS)))
+	mux.Handle("/favicon.png", http.FileServer(http.FS(static.FS)))
+
+	// Dashboard UI
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		api.RequireAdminPage(servePage("index.html"))(w, r)
+	})
+	mux.HandleFunc("/login", servePage("login.html"))
+	mux.HandleFunc("GET /download/{file}", api.HandleAgentDownload)
+	mux.HandleFunc("/setup", api.RequireAdminPage(api.ServeSetupUI))
+
+	// API v1
+	mux.HandleFunc("/api/v1/nodes", api.AuthMiddleware(api.HandleNodes))
+	mux.HandleFunc("/api/v1/stats", api.AuthMiddleware(api.HandleStats))
+	mux.HandleFunc("/api/v1/setup", api.AuthMiddleware(api.HandleSetup))
+	mux.HandleFunc("/api/v1/nodes/revoke", api.AuthMiddleware(api.HandleRevokeEnrollment))
+	mux.HandleFunc("POST /api/v1/nodes/{id}/action", api.AuthMiddleware(api.HandleNodeAction))
+	mux.HandleFunc("PUT /api/v1/nodes/{id}/policy", api.AuthMiddleware(api.HandleNodePolicy))
+	mux.HandleFunc("GET /api/v1/jobs", api.AuthMiddleware(api.HandleJobs))
+	mux.HandleFunc("GET /api/v1/jobs/{id}", api.AuthMiddleware(api.HandleJob))
+	mux.HandleFunc("GET /api/v1/settings", api.AuthMiddleware(api.HandleSettings))
+	mux.HandleFunc("PUT /api/v1/settings", api.AuthMiddleware(api.HandleSettings))
+	mux.HandleFunc("GET /api/v1/window", api.AuthMiddleware(api.HandleWindowStatus))
+	mux.HandleFunc("POST /api/v1/window/run", api.AuthMiddleware(api.HandleWindowRun))
+
+	// Agent Auth (rate limited per client IP)
+	authLimiter := api.NewRateLimiter(30, time.Minute)
+	mux.HandleFunc("/api/v1/auth/login", authLimiter.Middleware(api.HandleAgentLogin))
+	mux.HandleFunc("/api/v1/auth/refresh", authLimiter.Middleware(api.HandleAgentRefresh))
+
+	// Admin UI session
+	adminLimiter := api.NewRateLimiter(5, time.Minute)
+	mux.HandleFunc("/api/v1/admin/login", adminLimiter.Middleware(api.HandleAdminLogin))
+	mux.HandleFunc("/api/v1/admin/logout", api.HandleAdminLogout)
+
+	// WebSocket
+	mux.HandleFunc("/ws", websocket.HandleWebSocket)
+	return mux
 }

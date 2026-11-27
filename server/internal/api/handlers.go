@@ -290,5 +290,5 @@ func HandleAgentDownload(w http.ResponseWriter, r *http.Request) {
 		dir = "/app/agents"
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeFile(w, r, dir+"/"+name)
+	http.ServeFileFS(w, r, os.DirFS(dir), name)
 }
