@@ -145,10 +145,34 @@ func TestAdminLoginRateLimit(t *testing.T) {
 			t.Fatalf("attempt %d: got %d", i+1, c)
 		}
 	}
-	if c := try("1.1.1.1, 10.0.0.1"); c != http.StatusTooManyRequests {
-		t.Errorf("6th attempt: got %d, want 429", c)
+	if c := try("9.9.9.9, 1.1.1.1"); c != http.StatusTooManyRequests {
+		t.Errorf("a spoofed first entry must not dodge the limit, got %d, want 429", c)
 	}
 	if c := try("2.2.2.2"); c != http.StatusUnauthorized {
 		t.Errorf("another client behind the proxy must not be limited, got %d", c)
+	}
+}
+
+func TestSessionRequiresAdminToken(t *testing.T) {
+	auth.SetTestSecrets()
+	t.Setenv("ADMIN_TOKEN", "secret-admin")
+	cookie := loginCookie(t)
+	t.Setenv("ADMIN_TOKEN", "")
+	req := httptest.NewRequest(http.MethodGet, "http://rpatch.test/api/v1/nodes", nil)
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	AuthMiddleware(okHandler)(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("session accepted while ADMIN_TOKEN is unset: %d", rr.Code)
+	}
+}
+
+func TestLogoutRequiresSameOrigin(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "http://rpatch.test/api/v1/admin/logout", nil)
+	req.Header.Set("Origin", "http://evil.test")
+	rr := httptest.NewRecorder()
+	HandleAdminLogout(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("cross-origin logout: %d", rr.Code)
 	}
 }

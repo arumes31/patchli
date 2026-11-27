@@ -20,7 +20,8 @@ func validAdminToken(token string) bool {
 
 func hasAdminSession(r *http.Request) bool {
 	c, err := r.Cookie(SessionCookie)
-	return err == nil && auth.ValidAdminSession(c.Value)
+	// Unsetting ADMIN_TOKEN locks the UI, including existing sessions.
+	return err == nil && os.Getenv("ADMIN_TOKEN") != "" && auth.ValidAdminSession(c.Value)
 }
 
 // sameOrigin rejects cross-site requests that ride on the session cookie.
@@ -80,6 +81,10 @@ func HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
 func HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !sameOrigin(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	// shortcut: the session JWT stays valid until expiry (12h) if copied; add a server-side revocation list if sessions must die on logout.

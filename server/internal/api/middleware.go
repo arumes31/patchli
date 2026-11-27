@@ -114,13 +114,13 @@ func (rl *RateLimiter) Middleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // clientIP keys rate limits per client. Behind TRUSTED_PROXY every request
-// arrives from the proxy, so the first X-Forwarded-For entry is used there.
-// shortcut: that entry is client-controlled, so a client can dodge its own
-// limit but cannot exhaust another client's; fine while ADMIN_TOKEN is high-entropy.
+// arrives from the proxy, so the last X-Forwarded-For entry, which the proxy
+// appended itself, is used there; earlier entries are client-supplied.
 func clientIP(r *http.Request) string {
 	if proxy.IsTrusted(r.RemoteAddr) {
-		if first, _, _ := strings.Cut(r.Header.Get("X-Forwarded-For"), ","); strings.TrimSpace(first) != "" {
-			return strings.TrimSpace(first)
+		xff := r.Header.Get("X-Forwarded-For")
+		if last := strings.TrimSpace(xff[strings.LastIndex(xff, ",")+1:]); last != "" {
+			return last
 		}
 	}
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
