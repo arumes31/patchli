@@ -98,7 +98,7 @@ sequenceDiagram
 | `JWT_SECRET` | Secret key for signing Agent authentication tokens | - | **Yes** |
 | `REGISTRATION_SECRET` | Secret key for generating HMAC setup signatures | - | **Yes** |
 | `BASE_URL` | External URL of the server (e.g., `https://patch.example.com`). Always set it in production; without it the URL is derived from the request `Host` header. Must use HTTPS unless the host is loopback | `http://localhost:8080` | No |
-| `ADMIN_TOKEN` | High-entropy bearer token for the admin API (`/api/v1/nodes`, `/api/v1/stats`, `/api/v1/setup`, `/api/v1/nodes/revoke`). The admin API returns 401 while unset | - | No |
+| `ADMIN_TOKEN` | High-entropy secret (e.g. `openssl rand -hex 32`). Scripts send it as `Authorization: Bearer` to the admin API; in the web UI you sign in with it once and get a 12-hour HttpOnly session cookie (login is limited to 5 attempts per minute). Admin API and UI are locked while unset | - | **Yes** |
 | `TLS_CERT_FILE` / `TLS_KEY_FILE` | PEM certificate and key; when both are set the server serves HTTPS (TLS 1.2+). Agents require HTTPS, so set these unless a TLS reverse proxy fronts the server | - | No |
 | `TRUSTED_PROXY` | IP of a reverse proxy whose `X-Forwarded-Proto` header is trusted | - | No |
 | `COMMAND_SIGNING_KEY` | Base64 Ed25519 private key (32-byte seed) used to sign agent commands | - | No |

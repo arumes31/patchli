@@ -138,17 +138,12 @@
 
         <form id="login-form" class="space-y-6 text-left" onsubmit="handleLogin(event)">
             <div>
-                <label for="username"
-                    class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Username</label>
-                <input type="text" id="username" name="username" placeholder="Username or Email"
-                    class="data-mono text-sm" />
+                <label for="token"
+                    class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Admin token</label>
+                <input type="password" id="token" name="token" autocomplete="current-password" required
+                    placeholder="ADMIN_TOKEN" class="data-mono text-sm" />
             </div>
-            <div>
-                <label for="password"
-                    class="text-[10px] uppercase tracking-tighter text-teal-500 font-bold mb-1 block ml-2">Password</label>
-                <input type="password" id="password" name="password" placeholder="••••••••" class="data-mono text-sm" />
-            </div>
-            <p id="login-error" class="login-error hidden"></p>
+            <p id="login-error" class="login-error hidden" role="alert"></p>
 
             <button type="submit" class="primary data-mono">Sign In</button>
         </form>
@@ -161,37 +156,23 @@
     <script>
         async function handleLogin(event) {
             event.preventDefault();
-
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const errorEl = document.getElementById('login-error');
-            errorEl.classList.add('hidden');
-
+            const errorEl = document.getElementById("login-error");
+            errorEl.classList.add("hidden");
             try {
-                const res = await fetch('/api/v1/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
+                const res = await fetch("/api/v1/admin/login", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ token: document.getElementById("token").value })
                 });
-
                 if (res.ok) {
-                    const data = await res.json();
-                    if (data.token) {
-                        localStorage.setItem('token', data.token);
-                        window.location.href = '/';
-                    } else {
-                        errorEl.textContent = 'Unexpected response from server';
-                        errorEl.classList.remove('hidden');
-                    }
-                } else {
-                    const errData = await res.json().catch(() => ({}));
-                    errorEl.textContent = errData.error || 'Invalid credentials';
-                    errorEl.classList.remove('hidden');
+                    window.location.href = "/";
+                    return;
                 }
+                errorEl.textContent = res.status === 429 ? "Too many attempts. Wait a minute." : "Invalid token";
             } catch (err) {
-                errorEl.textContent = 'Connection failed. Please try again.';
-                errorEl.classList.remove('hidden');
+                errorEl.textContent = "Connection failed. Please try again.";
             }
+            errorEl.classList.remove("hidden");
         }
     </script>
 </body>

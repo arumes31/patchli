@@ -1,7 +1,6 @@
 package api
 
 import (
-	"crypto/subtle"
 	"net"
 	"net/http"
 	"os"
@@ -10,29 +9,31 @@ import (
 	"time"
 )
 
-// AuthMiddleware protects endpoints by requiring a Bearer token matching ADMIN_TOKEN.
+// AuthMiddleware protects admin endpoints. It accepts a Bearer token matching
+// ADMIN_TOKEN (scripts) or an admin session cookie (browser UI). Cookie
+// requests that change state must come from the same origin.
 func AuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		adminToken := os.Getenv("ADMIN_TOKEN")
-
-		// If ADMIN_TOKEN is not set, we default to unauthorized for safety.
-		if adminToken == "" {
-			http.Error(w, "Unauthorized - Server Configuration Error", http.StatusUnauthorized)
+		if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, "Bearer ") {
+			if os.Getenv("ADMIN_TOKEN") == "" {
+				http.Error(w, "Unauthorized - Server Configuration Error", http.StatusUnauthorized)
+				return
+			}
+			if !validAdminToken(strings.TrimPrefix(authHeader, "Bearer ")) {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
 			return
 		}
-
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, "Bearer ") {
+		if !hasAdminSession(r) {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(token), []byte(adminToken)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && !sameOrigin(r) {
+			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
-
 		next.ServeHTTP(w, r)
 	}
 }

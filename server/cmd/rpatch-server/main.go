@@ -52,6 +52,9 @@ func main() {
 
 	// Use embedded FS for static files
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.FS(static.FS))))
+	// Pages reference /assets/... and /favicon.png at the root.
+	mux.Handle("/assets/", http.FileServer(http.FS(static.FS)))
+	mux.Handle("/favicon.png", http.FileServer(http.FS(static.FS)))
 
 	// Dashboard UI
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -59,15 +62,10 @@ func main() {
 			http.NotFound(w, r)
 			return
 		}
-		data, err := static.FS.ReadFile("index.html")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write(data)
+		api.RequireAdminPage(servePage("index.html"))(w, r)
 	})
-	mux.HandleFunc("/setup", api.ServeSetupUI)
+	mux.HandleFunc("/login", servePage("login.html"))
+	mux.HandleFunc("/setup", api.RequireAdminPage(api.ServeSetupUI))
 
 	// API v1
 	mux.HandleFunc("/api/v1/nodes", api.AuthMiddleware(api.HandleNodes))
@@ -79,6 +77,11 @@ func main() {
 	authLimiter := api.NewRateLimiter(30, time.Minute)
 	mux.HandleFunc("/api/v1/auth/login", authLimiter.Middleware(api.HandleAgentLogin))
 	mux.HandleFunc("/api/v1/auth/refresh", authLimiter.Middleware(api.HandleAgentRefresh))
+
+	// Admin UI session
+	adminLimiter := api.NewRateLimiter(5, time.Minute)
+	mux.HandleFunc("/api/v1/admin/login", adminLimiter.Middleware(api.HandleAdminLogin))
+	mux.HandleFunc("/api/v1/admin/logout", api.HandleAdminLogout)
 
 	// WebSocket
 	mux.HandleFunc("/ws", websocket.HandleWebSocket)
@@ -158,4 +161,16 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("OK"))
+}
+
+func servePage(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := static.FS.ReadFile(name)
+		if err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(data)
+	}
 }
