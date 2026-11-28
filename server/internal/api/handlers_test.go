@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,121 +10,12 @@ import (
 	"testing"
 
 	"github.com/arumes31/rpatch/server/internal/fleet"
-	"github.com/arumes31/rpatch/server/internal/models"
 )
 
 func setupHandlers(t *testing.T) {
 	fleet.Registry.Reset()
 	t.Cleanup(func() {
 		fleet.Registry.Reset()
-	})
-}
-
-func TestHandleNodes(t *testing.T) {
-	setupHandlers(t)
-
-	t.Run("Empty nodes", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/api/v1/nodes", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rr := httptest.NewRecorder()
-		HandleNodes(rr, req)
-		if status := rr.Code; status != http.StatusOK {
-			t.Errorf("expected 200, got %d", status)
-		}
-		if rr.Body.String() != "[]\n" {
-			t.Errorf("expected empty array, got %s", rr.Body.String())
-		}
-	})
-
-	t.Run("With nodes", func(t *testing.T) {
-		fleet.Registry.Register("00:11:22:33:44:55", nil, models.HeartbeatPayload{
-			Hostname:   "node1",
-			MacAddress: "00:11:22:33:44:55",
-			OS:         "linux",
-		})
-
-		req, err := http.NewRequest("GET", "/api/v1/nodes", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		rr := httptest.NewRecorder()
-		HandleNodes(rr, req)
-
-		if status := rr.Code; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-		}
-
-		var nodes []models.AgentDetails
-		if err := json.Unmarshal(rr.Body.Bytes(), &nodes); err != nil {
-			t.Errorf("failed to unmarshal response: %v", err)
-		}
-
-		if len(nodes) != 1 {
-			t.Errorf("expected 1 node, got %d", len(nodes))
-		}
-	})
-}
-
-func TestHandleStats(t *testing.T) {
-	setupHandlers(t)
-
-	t.Run("Empty nodes", func(t *testing.T) {
-		req, err := http.NewRequest("GET", "/api/v1/stats", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rr := httptest.NewRecorder()
-		HandleStats(rr, req)
-		var stats struct {
-			Vitality int    `json:"vitality"`
-			Immune   string `json:"immune"`
-			Recovery int    `json:"recovery"`
-		}
-		if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
-			t.Fatal(err)
-		}
-		if stats.Vitality != 0 || stats.Immune != "0%" {
-			t.Errorf("Expected 0 stats, got %+v", stats)
-		}
-	})
-
-	t.Run("With mixed nodes", func(t *testing.T) {
-		fleet.Registry.Register("01", nil, models.HeartbeatPayload{MacAddress: "01", Hostname: "n1"})
-		fleet.Registry.Register("02", nil, models.HeartbeatPayload{MacAddress: "02", Hostname: "n2"})
-		fleet.Registry.Unregister("02") // Status becomes "offline"
-		fleet.Registry.Register("03", nil, models.HeartbeatPayload{MacAddress: "03", Hostname: "n3"})
-		fleet.Registry.SetStatus("03", "Online, Reboot Required")
-
-		req, err := http.NewRequest("GET", "/api/v1/stats", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		rr := httptest.NewRecorder()
-		HandleStats(rr, req)
-
-		var stats struct {
-			Vitality int    `json:"vitality"`
-			Immune   string `json:"immune"`
-			Recovery int    `json:"recovery"`
-		}
-		if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
-			t.Fatal(err)
-		}
-
-		if stats.Vitality != 3 {
-			t.Errorf("expected vitality 3, got %d", stats.Vitality)
-		}
-		// 2 online (n1, n3), 3 total -> 66%
-		if stats.Immune != "66%" {
-			t.Errorf("expected 66%% compliance, got %s", stats.Immune)
-		}
-		if stats.Recovery != 1 {
-			t.Errorf("expected recovery 1, got %d", stats.Recovery)
-		}
 	})
 }
 
@@ -145,19 +35,19 @@ func TestHandleSetup(t *testing.T) {
 		{
 			name:           "Defaults",
 			query:          "",
-			expectedInBody: []string{"GROUP='default'", "#!/bin/bash"},
+			expectedInBody: []string{"RPATCH_GROUP='default'", "#!/bin/sh", "rpatch-agent --enroll", "systemctl enable", "rc-update add"},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "Linux default",
 			query:          "group=prod&os=linux",
-			expectedInBody: []string{"GROUP='prod'", "#!/bin/bash", "SERVER_URL=", "NONCE='"},
+			expectedInBody: []string{"RPATCH_GROUP='prod'", "#!/bin/sh", "SERVER_URL=", "RPATCH_NONCE='"},
 			expectedStatus: http.StatusOK,
 		},
 		{
 			name:           "Alpine",
 			query:          "group=dev&os=alpine",
-			expectedInBody: []string{"GROUP='dev'", "#!/bin/sh", "Alpine"},
+			expectedInBody: []string{"RPATCH_GROUP='dev'", "#!/bin/sh", "rc-update add"},
 			expectedStatus: http.StatusOK,
 		},
 		{

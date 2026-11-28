@@ -50,8 +50,7 @@ func (m *ApkManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 }
 
 func (m *ApkManager) RebootRequired() bool {
-	// Alpine doesn't have a standard reboot-required file like Debian.
-	return false
+	return runningKernelReplaced()
 }
 
 func (m *ApkManager) PreFlightCheck(ctx context.Context) error {

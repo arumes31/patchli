@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -174,47 +173,3 @@ func TestIsValidGroupName(t *testing.T) {
 	}
 }
 
-func TestHandleNodesWithAuth(t *testing.T) {
-	t.Setenv("ADMIN_TOKEN", "testtoken")
-
-	req, err := http.NewRequest("GET", "/api/v1/nodes", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer testtoken")
-
-	rr := httptest.NewRecorder()
-	handler := AuthMiddleware(HandleNodes)
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-	}
-}
-
-func TestHandleStatsWithAuth(t *testing.T) {
-	t.Setenv("ADMIN_TOKEN", "testtoken")
-
-	req, err := http.NewRequest("GET", "/api/v1/stats", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Authorization", "Bearer testtoken")
-
-	rr := httptest.NewRecorder()
-	handler := AuthMiddleware(HandleStats)
-
-	handler.ServeHTTP(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-	}
-
-	var stats struct {
-		Vitality int `json:"vitality"`
-	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &stats); err != nil {
-		t.Errorf("failed to unmarshal response: %v", err)
-	}
-}

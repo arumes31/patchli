@@ -57,6 +57,17 @@ func SetKey(key ed25519.PrivateKey) {
 	signingKey = key
 }
 
+// PublicKey returns the base64 public key agents verify commands with, or "".
+func PublicKey() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	if signingKey == nil {
+		return ""
+	}
+	pub, _ := signingKey.Public().(ed25519.PublicKey)
+	return base64.StdEncoding.EncodeToString(pub)
+}
+
 // Enabled reports whether commands are signed.
 func Enabled() bool {
 	mu.RLock()

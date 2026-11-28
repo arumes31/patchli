@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -274,5 +275,50 @@ func TestSelfDestruct_SystemdFailures(t *testing.T) {
 	err := SelfDestruct()
 	if err != nil {
 		t.Errorf("Expected success even if systemctl fails (it ignores Run() errors), got %v", err)
+	}
+}
+
+func TestRunningKernelReplaced(t *testing.T) {
+	oldRead, oldDir, oldStat := readFileFunc, readDirFunc, statFunc
+	t.Cleanup(func() { readFileFunc, readDirFunc, statFunc = oldRead, oldDir, oldStat })
+	readFileFunc = func(string) ([]byte, error) { return []byte("6.18.58-0-lts\n"), nil }
+	modules := map[string]bool{}
+	readDirFunc = func(string) ([]os.DirEntry, error) {
+		if len(modules) == 0 {
+			return nil, os.ErrNotExist
+		}
+		return make([]os.DirEntry, len(modules)), nil
+	}
+	statFunc = func(p string) (os.FileInfo, error) {
+		if modules[filepath.Base(p)] {
+			return nil, nil
+		}
+		return nil, os.ErrNotExist
+	}
+	if runningKernelReplaced() {
+		t.Error("host without /lib/modules (container/VPS) must not need a reboot")
+	}
+	modules["6.18.58-0-lts"] = true
+	if runningKernelReplaced() {
+		t.Error("running kernel present: no reboot needed")
+	}
+	delete(modules, "6.18.58-0-lts")
+	modules["6.18.60-0-lts"] = true
+	if !runningKernelReplaced() {
+		t.Error("running kernel replaced by an upgrade: reboot needed")
+	}
+}
+
+func TestCountPending(t *testing.T) {
+	apt := "Reading package lists...\nInst libc6 [2.36-9] (2.36-9+deb12u1 Debian:12.8/stable [amd64])\nInst bash [5.2-1] (5.2-2 Debian)\nConf libc6\n"
+	if n := CountPending(&AptManager{}, apt); n != 2 {
+		t.Errorf("apt: %d", n)
+	}
+	apk := "Installed:                                Available:\nbusybox-1.36.1-r29                      < 1.36.1-r31\nmusl-1.2.5-r0                           < 1.2.5-r1\n"
+	if n := CountPending(&ApkManager{}, apk); n != 2 {
+		t.Errorf("apk: %d", n)
+	}
+	if n := CountPending(&DnfManager{}, "x"); n != -1 {
+		t.Errorf("unknown format: %d", n)
 	}
 }

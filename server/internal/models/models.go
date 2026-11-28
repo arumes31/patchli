@@ -22,6 +22,8 @@ type HeartbeatPayload struct {
 	OS           string `json:"os"`
 	OSVersion    string `json:"os_version"`
 	Kernel       string `json:"kernel"`
+	BootID       string `json:"boot_id"`
+	AgentVersion string `json:"agent_version"`
 	RebootNeeded bool   `json:"reboot_needed"`
 }
 

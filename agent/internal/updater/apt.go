@@ -43,15 +43,25 @@ func (m *AptManager) ApplyUpdates(ctx context.Context, packages []string) (Updat
 	// Feature 1: Dependency-aware ordering (Kernel should typically be last)
 	ordered := orderPackages(packages)
 
-	args := []string{"upgrade", "-y"}
+	// --with-new-pkgs installs new dependencies such as a new kernel ABI,
+	// which plain "upgrade" holds back; it never removes packages. Keep
+	// local config files instead of prompting.
+	args := append([]string{"-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"}, "upgrade", "--with-new-pkgs")
 	if len(ordered) > 0 {
-		args = append([]string{"install", "-y"}, ordered...)
+		args = append([]string{"-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold", "install"}, ordered...)
+	}
+
+	var out bytes.Buffer
+	update := execCommandContext(ctx, "apt-get", "update")
+	update.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	update.Stdout = &out
+	update.Stderr = &out
+	if err := update.Run(); err != nil {
+		return UpdateResult{Success: false, Output: out.String(), Error: err}, err
 	}
 
 	cmd := execCommandContext(ctx, "apt-get", args...)
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-
-	var out bytes.Buffer
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a")
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 

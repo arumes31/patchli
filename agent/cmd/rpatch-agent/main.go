@@ -29,17 +29,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// shellCommandContext returns an exec.Cmd that runs a shell script cross-platform.
-// On Windows it uses cmd.exe /c, on Unix it uses sh -c.
-func shellCommandContext(ctx context.Context, script string) *exec.Cmd {
-	if runtime.GOOS == "windows" {
-		// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
-		return exec.CommandContext(ctx, "cmd.exe", "/c", script)
-	}
-	// #nosec G204 -- Remote administration deliberately runs operator scripts received from the TLS-authenticated controller (or local loopback).
-	return exec.CommandContext(ctx, "sh", "-c", script)
-}
-
 var TrustedPubKey = os.Getenv("TRUSTED_PUB_KEY")
 
 // Version is the agent release version, set at build time with
@@ -52,8 +41,6 @@ const (
 	maxAgentBinaryBytes = 256 << 20
 	// maxManifestBytes caps the update manifest and its signature.
 	maxManifestBytes = 64 << 10
-	// maxCommandBytes caps a polled command payload.
-	maxCommandBytes = 1 << 20
 )
 
 // Keep service-owned storage and destructive host operations behind injectable
@@ -73,6 +60,7 @@ const (
 	MsgTypeCommand   = "command"
 	MsgTypeLog       = "log"
 	MsgTypeResult    = "result"
+	MsgTypeAck       = "ack"
 )
 
 type WSMessage struct {
@@ -86,6 +74,8 @@ type HeartbeatPayload struct {
 	OS           string `json:"os"`
 	OSVersion    string `json:"os_version"`
 	Kernel       string `json:"kernel"`
+	BootID       string `json:"boot_id"`
+	AgentVersion string `json:"agent_version"`
 	RebootNeeded bool   `json:"reboot_needed"`
 }
 
@@ -231,7 +221,15 @@ func refreshTokens(ctx context.Context, serverURL, nodeID string, refreshToken s
 
 func main() {
 	verifyFlag := flag.Bool("verify", false, "Perform self-diagnosis and exit")
+	enrollFlag := flag.Bool("enroll", false, "Redeem the installer's registration grant (RPATCH_* env) and exit")
 	flag.Parse()
+
+	if *enrollFlag {
+		if err := enroll(context.Background()); err != nil {
+			log.Fatalf("Enrollment failed: %v", err)
+		}
+		return
+	}
 
 	if *verifyFlag {
 		performSelfDiagnosis()
@@ -260,11 +258,7 @@ func RunAgent(ctx context.Context) {
 		log.Println("WARNING: COMMAND_PUB_KEY is not set; server commands are executed without signature verification.")
 	}
 
-	// State Recovery on Boot
-	lastState, _ := loadStateFunc()
-	if lastState != nil && lastState.Status == "running" {
-		log.Printf("RECOVERY: Detected interrupted job %s. Reporting to server...", lastState.JobID)
-	}
+	reportInterruptedJob(func() *state.State { st, _ := loadStateFunc(); return st }())
 
 	serverURL := os.Getenv("SERVER_URL")
 	if serverURL == "" {
@@ -276,284 +270,233 @@ func RunAgent(ctx context.Context) {
 		log.Fatalf("Invalid controller configuration: %v", err)
 	}
 
-	// Auth: load existing tokens
-	var tokens *TokenPair
-	tokens, _ = loadTokensFunc()
+	for {
+		err := connectOnce(ctx, serverURL, nodeID, pm)
+		if errors.Is(err, errRetryNow) {
+			continue
+		}
+		if err != nil {
+			log.Printf("Connection error: %v. Retrying in 30s...", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+		}
+	}
+}
 
-	if tokens == nil {
-		log.Println("No tokens found. Agent requires initial registration.")
+var (
+	errRetryNow  = errors.New("retry now")
+	errReconnect = errors.New("scheduled reconnect")
+)
+
+// sessionLifetime forces a periodic reconnect. The reconnect refreshes the
+// expired access token, which also rotates the refresh token and extends the
+// enrollment claim; without it a connection that stays up longer than the
+// refresh token lifetime (7 days) would lose its enrollment.
+var sessionLifetime = 12 * time.Hour
+
+func connectOnce(ctx context.Context, serverURL, nodeID string, pm updater.PackageManager) error {
+	tokens, err := loadTokensFunc()
+	if err != nil || tokens == nil {
+		return fmt.Errorf("agent is not enrolled (no tokens in %s); run the installer from the rpatch setup page", getTokenFile())
 	}
 
-	connectAndRun := func() error {
-		if tokens == nil {
-			// If no tokens, fall back to HTTP polling for compatibility
-			startHTTPPolling(ctx, serverURL, nodeID, pm, nil)
-			return fmt.Errorf("no tokens available")
-		}
+	u, err := controllerEndpoint(serverURL, "/ws")
+	if err != nil {
+		return err
+	}
+	if u.Scheme == "https" {
+		u.Scheme = "wss"
+	} else {
+		u.Scheme = "ws"
+	}
+	header := http.Header{}
+	header.Set("Authorization", "Bearer "+tokens.AccessToken)
 
-		u, err := controllerEndpoint(serverURL, "/ws")
-		if err != nil {
-			return err
-		}
-		if u.Scheme == "https" {
-			u.Scheme = "wss"
-		} else {
-			u.Scheme = "ws"
-		}
-		header := http.Header{}
-		header.Set("Authorization", "Bearer "+tokens.AccessToken)
-
-		// #nosec G706 -- %q escapes newlines and other control characters.
-		log.Printf("Connecting to %q", u.String())
-		conn, resp, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
-		if err != nil {
-			if resp != nil && resp.StatusCode == http.StatusUnauthorized {
-				log.Println("Unauthorized. Attempting token refresh...")
-				newTokens, err := refreshTokens(ctx, serverURL, nodeID, tokens.RefreshToken)
-				if err == nil {
-					tokens = newTokens
-					_ = saveTokens(*tokens)
-					return fmt.Errorf("retry")
-				}
+	// #nosec G706 -- %q escapes newlines and other control characters.
+	log.Printf("Connecting to %q", u.String())
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, u.String(), header)
+	if err != nil {
+		if resp != nil && resp.StatusCode == http.StatusUnauthorized {
+			log.Println("Unauthorized. Attempting token refresh...")
+			newTokens, rerr := refreshTokens(ctx, serverURL, nodeID, tokens.RefreshToken)
+			if rerr != nil {
+				return fmt.Errorf("token refresh failed: %w", rerr)
 			}
-			log.Printf("WebSocket dial error: %v. Falling back to HTTP Long-Polling...", err)
-			startHTTPPolling(ctx, serverURL, nodeID, pm, tokens)
-			return err
+			if serr := saveTokens(*newTokens); serr != nil {
+				return fmt.Errorf("cannot store refreshed tokens: %w", serr)
+			}
+			return errRetryNow
 		}
-		defer func() { _ = conn.Close() }()
+		return fmt.Errorf("websocket dial: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	log.Println("Connected to controller")
+	return runSession(ctx, conn, nodeID, pm)
+}
 
-		go runHeartbeat(ctx, conn, nodeID, pm)
-
+// runSession reads commands in a goroutine and does all writes itself:
+// gorilla/websocket allows only one concurrent writer.
+func runSession(ctx context.Context, conn *websocket.Conn, nodeID string, pm updater.PackageManager) error {
+	readErr := make(chan error, 1)
+	go func() {
 		for {
 			var wsMsg WSMessage
-			err := conn.ReadJSON(&wsMsg)
-			if err != nil {
+			if err := conn.ReadJSON(&wsMsg); err != nil {
+				readErr <- err
+				return
+			}
+			if wsMsg.Type == MsgTypeAck {
+				var ack struct {
+					JobID string `json:"job_id"`
+				}
+				if json.Unmarshal(wsMsg.Payload, &ack) == nil {
+					ackResult(ack.JobID)
+				}
+				continue
+			}
+			if wsMsg.Type != MsgTypeCommand {
+				continue
+			}
+			var cmd CommandPayload
+			if err := json.Unmarshal(wsMsg.Payload, &cmd); err != nil {
+				log.Printf("Command unmarshal error: %v", err)
+				continue
+			}
+			// Command fields are untrusted until verified; %q escapes
+			// control characters so they cannot forge log lines.
+			log.Printf("Received command: %q (Job: %q)", cmd.Action, cmd.ID)
+			if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
+				log.Printf("Rejected command %q: %v", cmd.ID, err)
+				continue
+			}
+			go executeCommand(ctx, pm, cmd)
+		}
+	}()
+
+	write := func(msgType string, payload []byte) error {
+		_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+		return conn.WriteJSON(WSMessage{Type: msgType, Payload: payload})
+	}
+	sendHeartbeat := func() error {
+		data, _ := json.Marshal(newHeartbeat(nodeID, pm))
+		return write(MsgTypeHeartbeat, data)
+	}
+	// Results stay queued until the controller acknowledges them; a result
+	// sent again after a reconnect is recorded only once.
+	flushResults := func() error {
+		for _, data := range pendingResults() {
+			if err := write(MsgTypeResult, data); err != nil {
 				return err
 			}
-
-			if wsMsg.Type == MsgTypeCommand {
-				var cmd CommandPayload
-				if err := json.Unmarshal(wsMsg.Payload, &cmd); err != nil {
-					log.Printf("Command unmarshal error: %v", err)
-					continue
-				}
-				// Command fields are untrusted until verified; %q escapes
-				// control characters so they cannot forge log lines.
-				log.Printf("Received command: %q (Job: %q)", cmd.Action, cmd.ID)
-				if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
-					log.Printf("Rejected command %q: %v", cmd.ID, err)
-					continue
-				}
-				go executeCommand(ctx, pm, cmd)
-			}
 		}
+		return nil
 	}
 
-	for {
-		err := connectAndRun()
-		if err != nil {
-			if err.Error() == "retry" {
-				continue
-			}
-			log.Printf("Connection error: %v. Retrying in 30s...", err)
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(30 * time.Second):
-			}
-		}
+	// Heartbeat first: the controller registers the node on its heartbeat.
+	if err := sendHeartbeat(); err != nil {
+		return err
 	}
-}
+	if err := flushResults(); err != nil {
+		return err
+	}
 
-func runHeartbeat(ctx context.Context, conn *websocket.Conn, nodeID string, pm updater.PackageManager) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-
+	reconnect := time.NewTimer(sessionLifetime)
+	defer reconnect.Stop()
 	for {
+		var err error
 		select {
 		case <-ctx.Done():
-			return
+			return ctx.Err()
+		case err = <-readErr:
+			return err
+		case <-reconnect.C:
+			return errReconnect
 		case <-ticker.C:
-			hostname, _ := os.Hostname()
-			rebootNeeded := pm.RebootRequired()
-
-			if rebootNeeded && runtime.GOOS != "windows" {
-				_ = exec.Command("wall", "rpatch: System reboot is required to finish updates.").Run()
-			}
-
-			payload := HeartbeatPayload{
-				MacAddress:   nodeID,
-				Hostname:     hostname,
-				OS:           runtime.GOOS,
-				OSVersion:    "unknown",
-				Kernel:       "unknown",
-				RebootNeeded: rebootNeeded,
-			}
-			data, err := json.Marshal(payload)
-			if err != nil {
-				continue
-			}
-
-			msg := WSMessage{Type: MsgTypeHeartbeat, Payload: data}
-			if err := conn.WriteJSON(msg); err != nil {
-				log.Printf("Heartbeat error: %v", err)
-				return
-			}
+			err = sendHeartbeat()
+		case <-resultsReady:
+			err = flushResults()
+		}
+		if err != nil {
+			return err
 		}
 	}
 }
 
-func startHTTPPolling(ctx context.Context, serverHost, nodeID string, pm updater.PackageManager, tokens *TokenPair) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	client := controllerClient(60 * time.Second)
-
-	for {
-		hostname, _ := os.Hostname()
-		hb := HeartbeatPayload{
-			MacAddress:   nodeID,
-			Hostname:     hostname,
-			OS:           runtime.GOOS,
-			OSVersion:    "unknown",
-			Kernel:       "unknown",
-			RebootNeeded: pm.RebootRequired(),
-		}
-		data, _ := json.Marshal(hb)
-
-		req, err := controllerRequest(ctx, "POST", serverHost, "/api/v1/poll", bytes.NewBuffer(data))
-		if err != nil {
-			log.Printf("Failed to create poll request: %v", err)
-			select {
-			case <-time.After(10 * time.Second):
-			case <-ctx.Done():
-				return
-			}
-			continue
-		}
-		req.Header.Set("Content-Type", "application/json")
-		if tokens != nil {
-			req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
-		}
-
-		// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("HTTP Poll error: %v", err)
-			select {
-			case <-time.After(10 * time.Second):
-			case <-ctx.Done():
-				return
-			}
-			continue
-		}
-
-		if resp.StatusCode == http.StatusOK {
-			var cmd CommandPayload
-			if err := json.NewDecoder(io.LimitReader(resp.Body, maxCommandBytes)).Decode(&cmd); err == nil && cmd.Action != "" {
-				if tokens == nil {
-					// Never act on commands from an unauthenticated session.
-					log.Printf("Ignoring command %q: agent is not authenticated", cmd.ID)
-				} else if err := verifyCommand(cmd, nodeID, time.Now()); err != nil {
-					log.Printf("Rejected command %q: %v", cmd.ID, err)
-				} else {
-					go executeCommand(ctx, pm, cmd)
-				}
-			}
-		} else if resp.StatusCode == http.StatusUnauthorized && tokens != nil {
-			log.Println("Poll Unauthorized. Attempting token refresh...")
-			newTokens, err := refreshTokens(ctx, serverHost, nodeID, tokens.RefreshToken)
-			if err == nil {
-				tokens = newTokens
-				_ = saveTokens(*tokens)
-			}
-		}
-
-		_ = resp.Body.Close()
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
+func newHeartbeat(nodeID string, pm updater.PackageManager) HeartbeatPayload {
+	hostname, _ := os.Hostname()
+	osVersion, kernel, bootID := hostInfo()
+	return HeartbeatPayload{
+		MacAddress:   nodeID,
+		Hostname:     hostname,
+		OS:           runtime.GOOS,
+		OSVersion:    osVersion,
+		Kernel:       kernel,
+		BootID:       bootID,
+		AgentVersion: Version,
+		RebootNeeded: pm.RebootRequired(),
 	}
 }
 
-func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandPayload) {
-	var res updater.UpdateResult
-	var err error
-
-	if cmd.Action == "apply_updates" {
-		if err := pm.PreFlightCheck(ctx); err != nil {
-			log.Printf("PreFlight Check Failed for Job %q: %v", cmd.ID, err)
-			return
-		}
-
-		if cmd.PrePatchScript != "" {
-			log.Printf("Executing Pre-Patch Script...")
-			out, err := shellCommandContext(ctx, cmd.PrePatchScript).CombinedOutput()
-			if err != nil {
-				log.Printf("Pre-Patch Script Failed: %v, Output: %s", err, string(out))
-				return
-			}
-		}
-
-		if err := saveStateFunc(state.State{
-			JobID:  cmd.ID,
-			Action: cmd.Action,
-			Status: "running",
-		}); err != nil {
-			log.Printf("Failed to save state: %v", err)
-		}
-		defer func() {
-			_ = clearStateFunc()
-		}()
+// enroll redeems the one-time registration grant from the installer
+// (RPATCH_GROUP, RPATCH_TIMESTAMP, RPATCH_NONCE, RPATCH_SIGNATURE) for a token pair.
+func enroll(ctx context.Context) error {
+	serverURL := os.Getenv("SERVER_URL")
+	if _, err := controllerEndpoint(serverURL, ""); err != nil {
+		return fmt.Errorf("invalid SERVER_URL: %w", err)
 	}
-
-	switch cmd.Action {
-	case "check_updates":
-		res, err = pm.CheckUpdates(ctx)
-	case "apply_updates":
-		res, err = pm.ApplyUpdates(ctx, cmd.Packages)
-	case "cleanup":
-		err = pm.Cleanup(ctx)
-		res = updater.UpdateResult{Success: err == nil, Error: err}
-	case "self_destruct":
-		err = selfDestructFunc()
-		res = updater.UpdateResult{Success: err == nil, Error: err}
-	case "update_agent":
-		log.Printf("Auto-updating agent...")
-		res = performSecureAgentUpdateFunc(ctx)
-	case "chaos_restart":
-		log.Printf("CHAOS MONKEY: Restarting agent...")
-		os.Exit(1)
-	default:
-		log.Printf("Unknown action: %q", cmd.Action)
-		return
+	nodeID, err := getIdentityFunc()
+	if err != nil {
+		return fmt.Errorf("identity: %w", err)
 	}
-
-	if cmd.Action == "apply_updates" && err == nil {
-		if cmd.PostPatchScript != "" {
-			log.Printf("Executing Post-Patch Script...")
-			out, execErr := shellCommandContext(ctx, cmd.PostPatchScript).CombinedOutput()
-			if execErr != nil {
-				log.Printf("Post-Patch Script Failed: %v, Output: %s", execErr, string(out))
-				err = execErr
-				res.Success = false
+	// A reinstall keeps working credentials. Credentials the controller no
+	// longer accepts (expired or revoked) are replaced with the fresh grant.
+	if t, err := loadTokensFunc(); err == nil && t != nil {
+		fresh, rerr := refreshTokens(ctx, serverURL, nodeID, t.RefreshToken)
+		if rerr == nil {
+			if err := saveTokens(*fresh); err != nil {
+				return err
 			}
+			log.Println("Already enrolled; credentials refreshed.")
+			return nil
 		}
-
-		if err == nil && cmd.HealthCheckCommand != "" {
-			log.Printf("Executing Health Check Command...")
-			out, execErr := shellCommandContext(ctx, cmd.HealthCheckCommand).CombinedOutput()
-			if execErr != nil {
-				log.Printf("Health Check Failed: %v, Output: %s", execErr, string(out))
-				err = execErr
-				res.Success = false
-			}
-		}
+		log.Printf("Stored credentials were rejected (%v); enrolling with the new grant.", rerr)
 	}
-
-	log.Printf("Job %q finished. Success: %v. Error: %v", cmd.ID, res.Success, err)
+	body, _ := json.Marshal(map[string]string{
+		"mac":       nodeID,
+		"group":     os.Getenv("RPATCH_GROUP"),
+		"timestamp": os.Getenv("RPATCH_TIMESTAMP"),
+		"nonce":     os.Getenv("RPATCH_NONCE"),
+		"signature": os.Getenv("RPATCH_SIGNATURE"),
+	})
+	req, err := controllerRequest(ctx, "POST", serverURL, "/api/v1/auth/login", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// #nosec G704 -- Request URL comes from validated operator SERVER_URL; TLS is verified and redirects are disabled.
+	resp, err := controllerClient(30 * time.Second).Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("enrollment rejected: %d %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	}
+	var pair TokenPair
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxManifestBytes)).Decode(&pair); err != nil || pair.AccessToken == "" {
+		return fmt.Errorf("invalid enrollment response: %v", err)
+	}
+	if err := saveTokens(pair); err != nil {
+		return err
+	}
+	log.Printf("Enrolled as node %s", nodeID)
+	return nil
 }
 
 // agentManifest describes a signed agent release. The Ed25519 signature

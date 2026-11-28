@@ -1,8 +1,6 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -16,7 +14,7 @@ import (
 	"time"
 
 	"github.com/arumes31/rpatch/server/internal/auth"
-	"github.com/arumes31/rpatch/server/internal/fleet"
+	"github.com/arumes31/rpatch/server/internal/cmdsign"
 	"github.com/arumes31/rpatch/server/internal/proxy"
 	"github.com/arumes31/rpatch/server/static"
 )
@@ -79,50 +77,6 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func HandleNodes(w http.ResponseWriter, r *http.Request) {
-	nodes := fleet.Registry.GetNodes()
-	w.Header().Set("Content-Type", "application/json")
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(nodes); err != nil {
-		log.Printf("Error encoding nodes: %v", err)
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		log.Printf("Response write failed: %v", err)
-	}
-}
-
-func HandleStats(w http.ResponseWriter, r *http.Request) {
-	// ⚡ Bolt: GetStats replaces O(N) allocation from GetNodes
-	totalNodes, online, rebootRequired := fleet.Registry.GetStats()
-
-	compliance := "0%"
-	if totalNodes > 0 {
-		compliance = fmt.Sprintf("%d%%", (online * 100 / totalNodes))
-	}
-
-	stats := struct {
-		Vitality int    `json:"vitality"`
-		Immune   string `json:"immune"`
-		Recovery int    `json:"recovery"`
-	}{
-		Vitality: totalNodes,
-		Immune:   compliance,
-		Recovery: rebootRequired,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(stats); err != nil {
-		log.Printf("Error encoding stats: %v", err)
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
-	if _, err := w.Write(buf.Bytes()); err != nil {
-		log.Printf("Response write failed: %v", err)
-	}
-}
-
 func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	group := r.URL.Query().Get("group")
 	if group == "" {
@@ -152,8 +106,6 @@ func HandleSetup(w http.ResponseWriter, r *http.Request) {
 	switch osType {
 	case "windows":
 		script = generateWindowsScript(group, timestamp, nonce, signature, baseURL)
-	case "alpine":
-		script = generateAlpineScript(group, timestamp, nonce, signature, baseURL)
 	default:
 		script = generateLinuxScript(group, timestamp, nonce, signature, baseURL)
 	}
@@ -185,75 +137,102 @@ func ServeSetupUI(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// generateLinuxScript returns a POSIX sh installer for systemd and OpenRC
+// hosts. It downloads the agent from this server, redeems the one-time
+// registration grant and starts the service. Re-running it upgrades the agent
+// and keeps the existing enrollment.
 func generateLinuxScript(group, ts, nonce, sig, url string) string {
-	return fmt.Sprintf(`#!/bin/bash
-set -e
-echo "--- rpatch Agent Setup (Linux) ---"
-GROUP='%s'
-TIMESTAMP='%s'
-NONCE='%s'
-SIGNATURE='%s'
+	pub := cmdsign.PublicKey()
+	insecure := ""
+	if strings.HasPrefix(url, "http://") {
+		// resolveBaseURL only allows plain HTTP for loopback (development).
+		insecure = "ALLOW_INSECURE_LOOPBACK=true\n"
+	}
+	return fmt.Sprintf(`#!/bin/sh
+set -eu
+echo "--- rpatch agent setup ---"
 SERVER_URL='%s'
+COMMAND_PUB_KEY='%s'
+RPATCH_GROUP='%s'
+RPATCH_TIMESTAMP='%s'
+RPATCH_NONCE='%s'
+RPATCH_SIGNATURE='%s'
+export RPATCH_GROUP RPATCH_TIMESTAMP RPATCH_NONCE RPATCH_SIGNATURE
 
-echo "1. Creating configuration..."
-mkdir -p /etc/rpatch
-cat <<EOF > /etc/rpatch/config.yaml
-server_url: $SERVER_URL
-group: $GROUP
-EOF
+[ "$(id -u)" -eq 0 ] || { echo "Run as root (sudo sh)." >&2; exit 1; }
+case "$(uname -m)" in
+  x86_64|amd64) ARCH=amd64 ;;
+  aarch64|arm64) ARCH=arm64 ;;
+  *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
-echo "2. Installing systemd service..."
-cat <<EOF > /etc/systemd/system/rpatch-agent.service
+echo "1. Downloading agent (linux/$ARCH)..."
+mkdir -p /etc/rpatch /var/lib/rpatch
+chmod 700 /etc/rpatch /var/lib/rpatch
+TMP=$(mktemp)
+trap 'rm -f "$TMP"' EXIT
+URL="$SERVER_URL/download/rpatch-agent-linux-$ARCH"
+PROTO=$(echo "$SERVER_URL" | cut -d: -f1)
+# curl is required: BusyBox wget cannot refuse redirects.
+command -v curl >/dev/null 2>&1 || { echo "curl is required (apt-get install curl / apk add curl)." >&2; exit 1; }
+curl -fsS --proto "=$PROTO" --max-redirs 0 -o "$TMP" "$URL"
+install -m 0755 "$TMP" /usr/local/bin/rpatch-agent.new
+mv -f /usr/local/bin/rpatch-agent.new /usr/local/bin/rpatch-agent
+
+echo "2. Writing configuration..."
+umask 077
+printf 'SERVER_URL=%%s\nCOMMAND_PUB_KEY=%%s\n%s' "$SERVER_URL" "$COMMAND_PUB_KEY" > /etc/rpatch/agent.env
+
+echo "3. Enrolling..."
+set -a
+. /etc/rpatch/agent.env
+set +a
+/usr/local/bin/rpatch-agent --enroll
+
+echo "4. Installing service..."
+if [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
+  cat > /etc/systemd/system/rpatch-agent.service <<'UNIT'
 [Unit]
-Description=rpatch Patch Management Agent
-After=network.target
+Description=rpatch patch management agent
+After=network-online.target
+Wants=network-online.target
 
 [Service]
+EnvironmentFile=/etc/rpatch/agent.env
 ExecStart=/usr/local/bin/rpatch-agent
 Restart=always
-User=root
+RestartSec=10
+# Package upgrades must not be killed with the agent.
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target
-EOF
-
-# systemctl daemon-reload
-# systemctl enable rpatch-agent
-# systemctl start rpatch-agent
-
-echo "SUCCESS: rpatch Agent configured for group: $GROUP"
-`, escapeBash(group), escapeBash(ts), escapeBash(nonce), escapeBash(sig), escapeBash(url))
-}
-
-func generateAlpineScript(group, ts, nonce, sig, url string) string {
-	return fmt.Sprintf(`#!/bin/sh
-set -e
-echo "--- rpatch Agent Setup (Alpine) ---"
-GROUP='%s'
-TIMESTAMP='%s'
-NONCE='%s'
-SIGNATURE='%s'
-SERVER_URL='%s'
-
-echo "1. Creating configuration..."
-mkdir -p /etc/rpatch
-cat <<EOF > /etc/rpatch/config.yaml
-server_url: $SERVER_URL
-group: $GROUP
-EOF
-
-echo "2. Installing OpenRC service..."
-cat <<EOF > /etc/init.d/rpatch-agent
+UNIT
+  systemctl daemon-reload
+  systemctl enable rpatch-agent >/dev/null 2>&1
+  systemctl restart rpatch-agent
+elif command -v rc-update >/dev/null 2>&1; then
+  cat > /etc/init.d/rpatch-agent <<'RC'
 #!/sbin/openrc-run
 name="rpatch-agent"
+description="rpatch patch management agent"
 command="/usr/local/bin/rpatch-agent"
-command_background="yes"
-pidfile="/run/rpatch-agent.pid"
-EOF
-chmod +x /etc/init.d/rpatch-agent
-
-echo "SUCCESS: rpatch Agent configured for group: $GROUP"
-`, escapeBash(group), escapeBash(ts), escapeBash(nonce), escapeBash(sig), escapeBash(url))
+supervisor="supervise-daemon"
+respawn_delay=10
+output_log="/var/log/rpatch-agent.log"
+error_log="/var/log/rpatch-agent.log"
+depend() { need net; }
+start_pre() { set -a; . /etc/rpatch/agent.env; set +a; }
+RC
+  chmod 0755 /etc/init.d/rpatch-agent
+  rc-update add rpatch-agent default >/dev/null 2>&1
+  rc-service rpatch-agent restart
+else
+  echo "No systemd or OpenRC found; start /usr/local/bin/rpatch-agent with /etc/rpatch/agent.env yourself." >&2
+  exit 1
+fi
+echo "SUCCESS: rpatch agent installed and enrolled (group: $RPATCH_GROUP)"
+`, escapeBash(url), escapeBash(pub), escapeBash(group), escapeBash(ts), escapeBash(nonce), escapeBash(sig), insecure)
 }
 
 func generateWindowsScript(group, ts, nonce, sig, url string) string {
@@ -292,4 +271,24 @@ func HandleStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	<-r.Context().Done()
+}
+
+func HandleAgentDownload(w http.ResponseWriter, r *http.Request) {
+	// Only these constant names are served; nothing from the request reaches the file system.
+	var name string
+	switch r.PathValue("file") {
+	case "rpatch-agent-linux-amd64":
+		name = "rpatch-agent-linux-amd64"
+	case "rpatch-agent-linux-arm64":
+		name = "rpatch-agent-linux-arm64"
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	dir := os.Getenv("AGENT_DIR")
+	if dir == "" {
+		dir = "/app/agents"
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	http.ServeFileFS(w, r, os.DirFS(dir), name)
 }

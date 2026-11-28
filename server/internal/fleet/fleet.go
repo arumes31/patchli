@@ -138,24 +138,26 @@ func (am *AgentManager) SendCommand(mac string, cmd models.CommandPayload) error
 	if err != nil {
 		return err
 	}
+	return am.send(mac, "command", cmd)
+}
 
+// Ack tells the agent that the result of jobID is stored.
+func (am *AgentManager) Ack(mac, jobID string) error {
+	return am.send(mac, "ack", map[string]string{"job_id": jobID})
+}
+
+// send writes one message; the lock keeps a single writer per connection.
+func (am *AgentManager) send(mac, msgType string, payload interface{}) error {
 	am.mu.Lock()
+	defer am.mu.Unlock()
 	conn, ok := am.agents[mac]
 	if !ok {
-		am.mu.Unlock()
 		return models.ErrAgentOffline
 	}
-
-	msg := struct {
+	return conn.WriteJSON(struct {
 		Type    string      `json:"type"`
 		Payload interface{} `json:"payload"`
-	}{
-		Type:    "command",
-		Payload: cmd,
-	}
-	err = conn.WriteJSON(msg)
-	am.mu.Unlock()
-	return err
+	}{Type: msgType, Payload: payload})
 }
 
 func (am *AgentManager) AcquireJob(mac, jobID string) bool {
@@ -188,4 +190,12 @@ func (am *AgentManager) SetStatus(id string, status string) {
 	if a, ok := am.details[id]; ok {
 		a.Status = status
 	}
+}
+
+// IsOnline reports whether the node has a live connection.
+func (am *AgentManager) IsOnline(mac string) bool {
+	am.mu.RLock()
+	defer am.mu.RUnlock()
+	_, ok := am.agents[mac]
+	return ok
 }

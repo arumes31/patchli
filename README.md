@@ -50,7 +50,7 @@ graph TD
 
 Agents register themselves securely using an HMAC-signed setup script. Once registered, they receive a persistent JWT for all future communications.
 
-- Each setup script carries a server-generated nonce that can be redeemed **once**, within 10 minutes. Generate a new script per node.
+- Each setup script carries a server-generated nonce that can be redeemed **once**, within 5 minutes. Generate a new script per node.
 - Enrollment claims the node ID. Tokens are never issued again for a claimed node ID, including while its refresh token is being rotated or after reuse revocation. The claim is extended on every refresh and expires 7 days after the last one. To re-enroll a reinstalled node, wait for the claim to expire or revoke it with the admin API:
   ```bash
   curl -fsS -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -d '{"mac":"<node-id>"}' https://patch.example.com/api/v1/nodes/revoke
@@ -78,10 +78,10 @@ sequenceDiagram
 ## ✨ Key Features
 
 - **🚀 Performance**: Go-based architecture with gRPC-ready design and non-blocking worker pools.
-- **🛡️ Resilience**: Self-healing watchdog, HTTP long-polling fallback, and state recovery after reboots.
+- **🛡️ Resilience**: Agents reconnect on their own, keep job results until the controller received them, and report jobs interrupted by a restart.
 - **📦 Multi-OS Support**: Native support for **APT** (Debian/Ubuntu), **APK** (Alpine), **DNF/YUM** (RHEL/Rocky), **Pacman** (Arch), **Zypper** (SUSE), and **WUA** (Windows).
 - **🔒 Security**: HMAC-based zero-touch registration, JWT persistent authentication, and pre-patch lock checks.
-- **🛠️ Orchestration**: Maintenance windows, pre/post-patch scripts, and remote health checks.
+- **🛠️ Orchestration**: Daily patch window, one host at a time, reboot only when required. Agents only run fixed package-manager commands, never shell code from the network.
 - **📈 Observability**: Real-time log streaming via WebSockets and detailed fleet metrics.
 
 ---
@@ -114,6 +114,7 @@ Redis requires `REDIS_PASSWORD`.
 | Flag | Description |
 | :--- | :--- |
 | `--verify` | Performs self-diagnosis (identity, PM detection, network) and exits. |
+| `--enroll` | Redeems the installer's one-time registration grant (`RPATCH_GROUP`, `RPATCH_TIMESTAMP`, `RPATCH_NONCE`, `RPATCH_SIGNATURE`) and stores the tokens. Does nothing if the agent is already enrolled. |
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
@@ -147,8 +148,7 @@ openssl pkey -in command-key.pem -pubout -outform DER | tail -c 32 | base64  # C
 ```
 
 Keep `command-key.pem` and `COMMAND_SIGNING_KEY` secret. Commands are bound to the target node and
-expire after 15 minutes. Commands received over an unauthenticated poll are
-never executed.
+expire after 15 minutes. The installer copies the public key from the server automatically.
 
 #### Self-update
 
@@ -175,13 +175,59 @@ docker-compose up -d
 ### 2. Access the Dashboard
 Navigate to `http://localhost:8080/` and log in.
 
-### 3. Add Your First Agent
-1. Go to the **Add Agent** section.
-2. Select your OS (Linux, Alpine, or Windows).
-3. Copy the generated one-liner and run it on your target node with
-   `RPATCH_ADMIN_TOKEN` set to the server's `ADMIN_TOKEN` (the setup endpoint
-   requires it). Each generated script registers a single node.
-4. The node will appear in the dashboard automatically.
+### 3. Add hosts
+Open **Add host**, set `RPATCH_ADMIN_TOKEN` on the host and run the shown
+command as root:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $RPATCH_ADMIN_TOKEN" \
+  "https://patch.example.com/api/v1/setup?group=default&os=linux" | sudo sh
+```
+
+The installer is a POSIX `sh` script for Debian, Ubuntu and Alpine (systemd
+or OpenRC, amd64 or arm64). It downloads the agent binary from the server
+(`/download/rpatch-agent-linux-<arch>`, built into the server image), writes
+`/etc/rpatch/agent.env`, enrolls with the one-time grant (valid for 5 minutes)
+and starts the `rpatch-agent` service. Re-running it upgrades the agent and
+keeps the enrollment. The host appears on the Fleet page within seconds.
+
+---
+
+## 🗓️ Patch window & reboots
+
+- Every day the scheduler runs the window configured under **Settings**
+  (default 03:00–05:30 Europe/Vienna). Hosts are patched **one at a time** in
+  slot order (lower slot first; set per host on the Fleet page).
+- A host is rebooted after patching only when the update requires it
+  (`/var/run/reboot-required` on Debian/Ubuntu, a replaced kernel on Alpine)
+  and its **auto-reboot** policy is on. The reboot counts as done when the
+  host reconnects with a new boot ID (timeout 15 minutes).
+- Excluded and offline hosts are skipped. No new host is started in the last
+  10 minutes of the window. After two consecutive failures the window stops and
+  a `window_paused` webhook is sent; every window ends with a
+  `window_summary` webhook (Discord, Slack, Teams).
+- Put the control-plane host in the last slot. When it reboots itself, the
+  window resumes after the restart: hosts already patched in this window are
+  counted as done, and the pending reboot is confirmed when its agent returns.
+- Apt runs `apt-get update` and `apt-get upgrade --with-new-pkgs` (new
+  kernels included, nothing removed) and keeps local config files. Upgrading
+  Docker restarts the host's containers regardless of the reboot policy.
+
+## 🔌 Admin API
+
+All endpoints accept the UI session cookie or `Authorization: Bearer $ADMIN_TOKEN`.
+
+| Method & path | Purpose |
+| :--- | :--- |
+| `GET /api/v1/nodes` | Hosts with status, pending updates, policy |
+| `GET /api/v1/stats` | Fleet totals |
+| `POST /api/v1/nodes/{id}/action` | `{"action":"check_updates"\|"apply_updates"\|"reboot"}` |
+| `PUT /api/v1/nodes/{id}/policy` | `{"auto_reboot":true,"excluded":false,"slot":100}` |
+| `GET /api/v1/jobs?node=&limit=` / `GET /api/v1/jobs/{id}` | Job history / one job with output |
+| `GET`/`PUT /api/v1/settings` | `{"window_start":"03:00","window_end":"05:30","timezone":"Europe/Vienna","enabled":true}` |
+| `GET /api/v1/window` / `POST /api/v1/window/run` | Window status / start a window now |
+| `GET /api/v1/setup?os=linux&group=` | Installer with a fresh one-time grant |
+| `POST /api/v1/nodes/revoke` | `{"mac":"<node-id>"}` removes a host's enrollment |
 
 ---
 

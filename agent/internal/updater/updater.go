@@ -20,6 +20,8 @@ var (
 	execCommand        = exec.Command
 	execCommandContext = exec.CommandContext
 	statFunc           = os.Stat
+	readFileFunc       = os.ReadFile
+	readDirFunc        = os.ReadDir
 	geteuidFunc        = os.Geteuid
 	removeFunc         = os.Remove
 	removeAllFunc      = os.RemoveAll
@@ -168,3 +170,42 @@ func DetectPackageManager() (PackageManager, error) {
 
 // DetectWindowsManager returns the WindowsManager if compiled for Windows, else an error.
 // This will be implemented conditionally.
+
+// runningKernelReplaced reports whether the running kernel's module directory
+// is gone, which happens when a kernel upgrade replaced it (Alpine has no
+// reboot-required marker).
+func runningKernelReplaced() bool {
+	release, err := readFileFunc("/proc/sys/kernel/osrelease")
+	if err != nil {
+		return false
+	}
+	// Containers and VPS guests without their own kernel have no modules
+	// directory at all; only a replaced kernel leaves other versions behind.
+	entries, err := readDirFunc("/lib/modules")
+	if err != nil || len(entries) == 0 {
+		return false
+	}
+	_, err = statFunc("/lib/modules/" + strings.TrimSpace(string(release)))
+	return os.IsNotExist(err)
+}
+
+// CountPending counts upgradable packages in CheckUpdates output, -1 if the
+// package manager's output format is not known.
+func CountPending(pm PackageManager, output string) int {
+	var match func(string) bool
+	switch pm.(type) {
+	case *AptManager:
+		match = func(l string) bool { return strings.HasPrefix(l, "Inst ") }
+	case *ApkManager:
+		match = func(l string) bool { return strings.Contains(l, " < ") }
+	default:
+		return -1
+	}
+	n := 0
+	for _, l := range strings.Split(output, "\n") {
+		if match(l) {
+			n++
+		}
+	}
+	return n
+}
