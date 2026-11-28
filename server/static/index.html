@@ -171,8 +171,7 @@ function iconButton(icon, label, onclick, disabled) {
   return b;
 }
 
-async function savePolicy(node, patch) {
-  const body = { auto_reboot: node.auto_reboot, excluded: node.excluded, slot: node.slot, ...patch };
+async function savePolicy(node, body) {
   const res = await api(`/api/v1/nodes/${encodeURIComponent(node.id)}/policy`, { method: 'PUT', body: JSON.stringify(body) });
   toast(res.ok ? `Saved policy for ${node.hostname}` : `Saving failed: ${(await res.text()).trim()}`);
   refresh();
@@ -189,12 +188,14 @@ function renderNodes() {
     const pending = n.pending_updates < 0 ? '–' : String(n.pending_updates);
     const auto = el('input', { type: 'checkbox', 'aria-label': `Auto-reboot ${n.hostname}` });
     auto.checked = n.auto_reboot;
-    auto.addEventListener('change', () => savePolicy(n, { auto_reboot: auto.checked }));
+
     const excl = el('input', { type: 'checkbox', 'aria-label': `Exclude ${n.hostname}` });
     excl.checked = n.excluded;
-    excl.addEventListener('change', () => savePolicy(n, { excluded: excl.checked }));
+
     const slot = el('input', { type: 'number', min: '0', max: '10000', value: String(n.slot), 'aria-label': `Patch order slot of ${n.hostname}` });
-    slot.addEventListener('change', () => savePolicy(n, { slot: parseInt(slot.value, 10) || 0 }));
+    // Always send the row's current values, so one save cannot undo another.
+    const save = () => savePolicy(n, { auto_reboot: auto.checked, excluded: excl.checked, slot: parseInt(slot.value, 10) || 0 });
+    for (const input of [auto, excl, slot]) input.addEventListener('change', save);
 
     const logs = iconButton('logs', 'Job history', () => showLatestJob(n));
     tbody.append(el('tr', {},

@@ -173,11 +173,9 @@ TMP=$(mktemp)
 trap 'rm -f "$TMP"' EXIT
 URL="$SERVER_URL/download/rpatch-agent-linux-$ARCH"
 PROTO=$(echo "$SERVER_URL" | cut -d: -f1)
-if command -v curl >/dev/null 2>&1; then
-  curl -fsS --proto "=$PROTO" --max-redirs 0 -o "$TMP" "$URL"
-else
-  wget -q --max-redirect=0 -O "$TMP" "$URL"
-fi
+# curl is required: BusyBox wget cannot refuse redirects.
+command -v curl >/dev/null 2>&1 || { echo "curl is required (apt-get install curl / apk add curl)." >&2; exit 1; }
+curl -fsS --proto "=$PROTO" --max-redirs 0 -o "$TMP" "$URL"
 install -m 0755 "$TMP" /usr/local/bin/rpatch-agent.new
 mv -f /usr/local/bin/rpatch-agent.new /usr/local/bin/rpatch-agent
 

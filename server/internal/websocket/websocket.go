@@ -202,7 +202,11 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Result unmarshal error: %v", err)
 				continue
 			}
-			patching.HandleResult(nodeID, res)
+			if patching.HandleResult(nodeID, res) {
+				if err := fleet.Registry.Ack(nodeID, res.JobID); err != nil {
+					log.Printf("Acknowledging job %q failed: %v", res.JobID, err) // #nosec G706 -- %q escapes control characters.
+				}
+			}
 		}
 	}
 }

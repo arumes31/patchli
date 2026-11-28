@@ -86,6 +86,7 @@ func TestSessionRoundTrip(t *testing.T) {
 	CommandPubKey = base64.StdEncoding.EncodeToString(pub)
 
 	got := make(chan WSMessage, 4)
+	acks := make(chan string, 1)
 	upgrader := websocket.Upgrader{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -93,6 +94,12 @@ func TestSessionRoundTrip(t *testing.T) {
 			return
 		}
 		defer func() { _ = conn.Close() }()
+		go func() {
+			for id := range acks {
+				payload, _ := json.Marshal(map[string]string{"job_id": id})
+				_ = conn.WriteJSON(WSMessage{Type: MsgTypeAck, Payload: payload})
+			}
+		}()
 		for {
 			var m WSMessage
 			if err := conn.ReadJSON(&m); err != nil {
@@ -113,8 +120,10 @@ func TestSessionRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = runSession(ctx, conn, "node-1", &mockPM{}) }()
+	sessionDone := make(chan struct{})
+	go func() { _ = runSession(ctx, conn, "node-1", &mockPM{}); close(sessionDone) }()
+	// Runs before the results-dir cleanup: stop the session first.
+	t.Cleanup(func() { cancel(); _ = conn.Close(); <-sessionDone })
 
 	deadline := time.After(5 * time.Second)
 	var sawHeartbeat bool
@@ -130,9 +139,16 @@ func TestSessionRoundTrip(t *testing.T) {
 				if !sawHeartbeat || r.JobID != "job-1" || !r.Success {
 					t.Fatalf("unexpected result %+v (heartbeat first: %v)", r, sawHeartbeat)
 				}
-				time.Sleep(50 * time.Millisecond)
-				if !resultsEmpty() {
-					t.Fatal("delivered result was not removed from the queue")
+				if resultsEmpty() {
+					t.Fatal("result dropped before the controller acknowledged it")
+				}
+				acks <- r.JobID
+				deadline := time.Now().Add(2 * time.Second)
+				for !resultsEmpty() {
+					if time.Now().After(deadline) {
+						t.Fatal("acknowledged result was not removed from the queue")
+					}
+					time.Sleep(20 * time.Millisecond)
 				}
 				return
 			}

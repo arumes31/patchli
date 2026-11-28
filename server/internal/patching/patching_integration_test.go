@@ -55,6 +55,7 @@ func testDB(t *testing.T) {
 }
 
 type fakeFleet struct {
+	wg      sync.WaitGroup // running responders
 	mu      sync.Mutex
 	online  map[string]bool
 	sent    []string
@@ -65,7 +66,10 @@ type fakeFleet struct {
 func installFake(t *testing.T, f *fakeFleet) {
 	t.Helper()
 	oldSend, oldOnline, oldNotify, oldPoll, oldStart := sendCommand, isOnline, notify, pollInterval, startedAt
-	t.Cleanup(func() { sendCommand, isOnline, notify, pollInterval, startedAt = oldSend, oldOnline, oldNotify, oldPoll, oldStart })
+	t.Cleanup(func() {
+		f.wg.Wait() // responders still use the hooks and the database
+		sendCommand, isOnline, notify, pollInterval, startedAt = oldSend, oldOnline, oldNotify, oldPoll, oldStart
+	})
 	pollInterval = 10 * time.Millisecond
 	startedAt = time.Now().Add(-time.Hour)
 	isOnline = func(id string) bool { f.mu.Lock(); defer f.mu.Unlock(); return f.online[id] }
@@ -76,7 +80,8 @@ func installFake(t *testing.T, f *fakeFleet) {
 		respond := f.respond
 		f.mu.Unlock()
 		if respond != nil {
-			go respond(node, cmd)
+			f.wg.Add(1)
+			go func() { defer f.wg.Done(); respond(node, cmd) }()
 		}
 		return nil
 	}
@@ -116,9 +121,9 @@ func TestWindowPatchesRebootsAndSkips(t *testing.T) {
 	f.respond = func(node string, cmd models.CommandPayload) {
 		switch cmd.Action {
 		case "apply_updates":
-			HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Success: true, Output: "upgraded", RebootNeeded: node == "node-a", Pending: 0})
+			_ = HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Success: true, Output: "upgraded", RebootNeeded: node == "node-a", Pending: 0})
 		case "reboot":
-			HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Success: true, RebootNeeded: true, Pending: -1})
+			_ = HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Success: true, RebootNeeded: true, Pending: -1})
 			// came back with a new boot ID (what the WebSocket handler does per heartbeat)
 			HandleHeartbeat(node, "boot-a2")
 			_ = db.UpdateHeartbeat(node, "alpha", "linux", "Debian", "6.2", "boot-a2", "test", false)
@@ -126,7 +131,9 @@ func TestWindowPatchesRebootsAndSkips(t *testing.T) {
 	}
 	installFake(t, f)
 
-	Default.run(context.Background(), true)
+	if !Default.run(context.Background(), true) {
+		t.Fatal("window did not complete")
+	}
 
 	if got := strings.Join(f.sent, ","); got != "node-a:apply_updates,node-a:reboot,node-b:apply_updates" {
 		t.Fatalf("commands sent: %s", got)
@@ -164,7 +171,7 @@ func TestWindowStopsAfterTwoFailures(t *testing.T) {
 	}
 	f := &fakeFleet{online: map[string]bool{"n1": true, "n2": true, "n3": true}}
 	f.respond = func(node string, cmd models.CommandPayload) {
-		HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Error: "dpkg was interrupted", Pending: -1})
+		_ = HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Error: "dpkg was interrupted", Pending: -1})
 	}
 	installFake(t, f)
 
@@ -199,7 +206,9 @@ func TestDispatchBusyAndWaitTimeout(t *testing.T) {
 		t.Fatalf("Wait: %+v %v", j, err)
 	}
 	// A late result from another node is ignored.
-	HandleResult("intruder", Result{JobID: id, Success: true})
+	if !HandleResult("intruder", Result{JobID: id, Success: true}) {
+		t.Error("a result that can never be stored must be acknowledged")
+	}
 	if j, _ := db.GetJob(id); j.State != "failed" {
 		t.Fatalf("foreign result changed the job: %+v", j)
 	}
@@ -211,8 +220,8 @@ func TestSchedulerRunNow(t *testing.T) {
 	installFake(t, f)
 	s := &Scheduler{runNow: make(chan struct{}, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	s.Start(ctx)
+	t.Cleanup(func() { cancel(); <-s.Done() })
 	if !s.RunNow() {
 		t.Fatal("RunNow refused")
 	}
@@ -225,5 +234,53 @@ func TestSchedulerRunNow(t *testing.T) {
 	}
 	if st := s.Status(); st.NextRun == "" {
 		t.Fatalf("status without next run: %+v", st)
+	}
+}
+
+func TestRebootFailuresCountTowardsTheLimit(t *testing.T) {
+	testDB(t)
+	for i, id := range []string{"r1", "r2", "r3"} {
+		enroll(t, id, "host-"+id, "boot", i)
+	}
+	f := &fakeFleet{online: map[string]bool{"r1": true, "r2": true, "r3": true}}
+	f.respond = func(node string, cmd models.CommandPayload) {
+		if cmd.Action == "apply_updates" {
+			_ = HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Success: true, RebootNeeded: true})
+			return
+		}
+		_ = HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Error: "shutdown refused", Pending: -1})
+	}
+	installFake(t, f)
+	Default.run(context.Background(), true)
+	if got := strings.Join(f.sent, ","); got != "r1:apply_updates,r1:reboot,r2:apply_updates,r2:reboot" {
+		t.Fatalf("window must stop after two failed reboots: %s", got)
+	}
+	if lastNote(f, "window_paused") == "" {
+		t.Fatal("no window_paused notification")
+	}
+}
+
+func TestBusyNodeRunsRequestedActionAfterOtherJob(t *testing.T) {
+	testDB(t)
+	enroll(t, "b1", "busy-host", "boot", 1)
+	f := &fakeFleet{online: map[string]bool{"b1": true}}
+	installFake(t, f)
+	checkID, err := Dispatch("b1", "check_updates", "manual") // nobody answers yet
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.respond = func(node string, cmd models.CommandPayload) {
+		_ = HandleResult(node, Result{JobID: cmd.ID, Action: cmd.Action, Success: true})
+	}
+	f.mu.Unlock()
+	go func() { // the open check finishes a moment later
+		time.Sleep(50 * time.Millisecond)
+		_ = HandleResult("b1", Result{JobID: checkID, Action: "check_updates", Success: true, Pending: 2})
+	}()
+	n, _ := db.GetNode("b1")
+	job, err := waitForJob(context.Background(), n, "apply_updates", time.Minute)
+	if err != nil || job.Action != "apply_updates" || job.State != "ok" {
+		t.Fatalf("a running check was taken for the patch: %+v %v", job, err)
 	}
 }

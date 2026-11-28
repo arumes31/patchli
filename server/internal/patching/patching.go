@@ -4,6 +4,7 @@ package patching
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -105,21 +106,31 @@ type Result struct {
 	Pending      int    `json:"pending"`
 }
 
-// HandleResult stores a result reported by nodeID. Jobs of other nodes are
-// ignored.
-func HandleResult(nodeID string, r Result) {
+// HandleResult stores a result reported by nodeID and reports whether the
+// agent may drop its queued copy: true once stored, or when the result can
+// never be stored (unknown job, another node's job); false on a database
+// error, so the agent sends it again.
+func HandleResult(nodeID string, r Result) bool {
 	job, err := db.GetJob(r.JobID)
-	if err != nil || job.NodeID != nodeID {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && job.NodeID != nodeID) {
 		log.Printf("Ignoring result for unknown job %q from %q", r.JobID, nodeID) // #nosec G706 -- %q escapes control characters.
-		return
+		return true
+	}
+	if err != nil {
+		log.Printf("Loading job %q failed: %v", r.JobID, err) // #nosec G706 -- %q escapes control characters.
+		return false
 	}
 	if err := db.RecordResult(nodeID, r.JobID, job.Action, r.Success, r.Error, r.Output, r.RebootNeeded, r.Pending); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true // already completed
+		}
 		log.Printf("Recording result of job %s failed: %v", r.JobID, err)
-		return
+		return false
 	}
 	if !r.Success {
 		notify(webhooks.WebhookPayload{Event: "job_failed", Message: fmt.Sprintf("%s on %s failed: %s", job.Action, job.Hostname, r.Error), JobID: r.JobID, NodeMac: nodeID})
 	}
+	return true
 }
 
 // HandleHeartbeat completes pending reboots of a node that came back.
@@ -142,6 +153,7 @@ type Scheduler struct {
 	running bool
 	current string
 	runNow  chan struct{}
+	done    chan struct{}
 }
 
 // Default is the process-wide scheduler.
@@ -170,9 +182,11 @@ func (s *Scheduler) RunNow() bool {
 	}
 }
 
-// Start runs the scheduler until ctx ends.
+// Start runs the scheduler until ctx ends; Done closes when it stopped.
 func (s *Scheduler) Start(ctx context.Context) {
+	s.done = make(chan struct{})
 	go func() {
+		defer close(s.done)
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
@@ -190,8 +204,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 					log.Printf("Reading settings failed: %v", err)
 					continue
 				}
-				if date, ok := due(set, now()); ok {
-					s.run(ctx, false)
+				// An aborted window (no settings or node list) is retried
+				// on the next tick instead of being recorded as done.
+				if date, ok := due(set, now()); ok && s.run(ctx, false) {
 					if err := db.MarkWindowDone(date); err != nil {
 						log.Printf("Recording window %s failed: %v", date, err)
 					}
@@ -200,6 +215,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 		}
 	}()
 }
+
+// Done is closed when the goroutine started by Start has exited.
+func (s *Scheduler) Done() <-chan struct{} { return s.done }
 
 // window returns today's window [start, end) in the configured timezone.
 func window(set db.Settings, t time.Time) (start, end time.Time, err error) {
@@ -270,8 +288,15 @@ func skipReason(n db.Node, online bool, windowStart time.Time) string {
 func waitForJob(ctx context.Context, n db.Node, action string, timeout time.Duration) (db.Job, error) {
 	id, err := Dispatch(n.ID, action, "schedule")
 	if errors.Is(err, ErrBusy) {
-		log.Printf("Window: %s already has job %s; waiting for it", n.Hostname, id)
-		err = nil
+		if open, gerr := db.GetJob(id); gerr == nil && open.Action == action {
+			log.Printf("Window: %s already runs %s as job %s; waiting for it", n.Hostname, action, id)
+			return Wait(ctx, id, timeout)
+		}
+		log.Printf("Window: %s is busy with job %s; waiting before %s", n.Hostname, id, action)
+		if _, err := Wait(ctx, id, timeout); err != nil {
+			return db.Job{}, err
+		}
+		id, err = Dispatch(n.ID, action, "schedule")
 	}
 	if err != nil {
 		return db.Job{ID: id, State: "failed", Error: err.Error()}, nil
@@ -285,15 +310,17 @@ func (s *Scheduler) setCurrent(running bool, host string) {
 	s.mu.Unlock()
 }
 
-// run patches every node in slot order, one at a time.
-func (s *Scheduler) run(ctx context.Context, manual bool) {
+// run patches every node in slot order, one at a time. It reports whether
+// the window reached its end (all hosts handled, the window closed or the
+// failure limit stopped it).
+func (s *Scheduler) run(ctx context.Context, manual bool) bool {
 	s.setCurrent(true, "")
 	defer s.setCurrent(false, "")
 
 	set, err := db.GetSettings()
 	if err != nil {
 		log.Printf("Window: cannot read settings: %v", err)
-		return
+		return false
 	}
 	start, end, err := window(set, now())
 	if manual || err != nil {
@@ -303,22 +330,36 @@ func (s *Scheduler) run(ctx context.Context, manual bool) {
 		log.Printf("Window: waiting %v for agents to reconnect", wait.Round(time.Second))
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-time.After(wait):
 		}
 	}
 	nodes, err := db.ListNodes()
 	if err != nil {
 		log.Printf("Window: cannot list nodes: %v", err)
-		return
+		return false
 	}
 	log.Printf("Window started (manual=%v) for %d nodes", manual, len(nodes))
 
 	var ok, rebooted, failed, skipped []string
-	consecutiveFailures := 0
+	consecutiveFailures, stop := 0, false
+	// fail records a failed host; two in a row stop the window.
+	fail := func(i int, msg string) {
+		failed = append(failed, msg)
+		if consecutiveFailures++; consecutiveFailures >= 2 {
+			notify(webhooks.WebhookPayload{Event: "window_paused", Message: "Patch window stopped after two consecutive failures: " + strings.Join(failed, "; ")})
+			for _, rest := range nodes[i+1:] {
+				skipped = append(skipped, rest.Hostname+" (stopped after failures)")
+			}
+			stop = true
+		}
+	}
 	for i, n := range nodes {
+		if stop {
+			break
+		}
 		if ctx.Err() != nil {
-			return
+			return false
 		}
 		if now().After(end.Add(-10 * time.Minute)) {
 			for _, rest := range nodes[i:] {
@@ -342,37 +383,29 @@ func (s *Scheduler) run(ctx context.Context, manual bool) {
 		if n.LastPatchAt == nil || n.LastPatchAt.Before(start) {
 			job, err = waitForJob(ctx, n, "apply_updates", patchTimeout)
 			if err != nil {
-				return
+				return false
 			}
 			if job.State != "ok" {
-				failed = append(failed, n.Hostname+": "+job.Error)
-				if consecutiveFailures++; consecutiveFailures >= 2 {
-					notify(webhooks.WebhookPayload{Event: "window_paused", Message: "Patch window stopped after two consecutive failures: " + strings.Join(failed, "; ")})
-					for _, rest := range nodes[i+1:] {
-						skipped = append(skipped, rest.Hostname+" (stopped after failures)")
-					}
-					break
-				}
+				fail(i, n.Hostname+": "+job.Error)
 				continue
 			}
 		}
-		consecutiveFailures = 0
 
 		needsReboot := (job.RebootNeeded != nil && *job.RebootNeeded) || (job.ID == "" && n.RebootRequired)
 		if needsReboot && n.AutoReboot {
 			rj, err := waitForJob(ctx, n, "reboot", rebootTimeout)
 			if err != nil {
-				return
+				return false
 			}
 			if rj.State != "ok" {
-				failed = append(failed, n.Hostname+": reboot "+rj.Error)
-				consecutiveFailures++
+				fail(i, n.Hostname+": reboot "+rj.Error)
 				continue
 			}
 			rebooted = append(rebooted, n.Hostname)
-			continue
+		} else {
+			ok = append(ok, n.Hostname)
 		}
-		ok = append(ok, n.Hostname)
+		consecutiveFailures = 0
 	}
 
 	msg := fmt.Sprintf("Patch window done: %d ok, %d rebooted, %d failed, %d skipped.", len(ok), len(rebooted), len(failed), len(skipped))
@@ -384,4 +417,5 @@ func (s *Scheduler) run(ctx context.Context, manual bool) {
 	}
 	log.Print(msg)
 	notify(webhooks.WebhookPayload{Event: "window_summary", Message: msg})
+	return true
 }

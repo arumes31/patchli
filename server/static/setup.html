@@ -23,12 +23,12 @@
     <div class="panel-head"><h2>Add a Linux host</h2></div>
     <div style="padding: 1rem">
       <p class="muted" style="margin-top: 0">Works on Debian, Ubuntu and Alpine (systemd or OpenRC, amd64 or arm64). On the host, set
-        <span class="mono">RPATCH_ADMIN_TOKEN</span> to the admin token and run the command below as root. Each run fetches a fresh one-time enrollment grant that is valid for 5 minutes. Re-running it on an enrolled host upgrades the agent.</p>
+        <span class="mono">RPATCH_ADMIN_TOKEN</span> to the admin token and run the command below as root (for example after <span class="mono">sudo -i</span>). Each run fetches a fresh one-time enrollment grant that is valid for 5 minutes. Re-running it on an enrolled host upgrades the agent.</p>
       <div class="field" style="max-width: 260px">
         <label for="group">Group</label>
         <input id="group" value="default" pattern="[A-Za-z0-9._-]+">
       </div>
-      <code class="cmd" id="install-command">curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $RPATCH_ADMIN_TOKEN" "{{.BaseURL}}/api/v1/setup?group=default&amp;os=linux" | sudo sh</code>
+      <code class="cmd" id="install-command">curl --proto '=https' --tlsv1.2 -fsS -H "Authorization: Bearer $RPATCH_ADMIN_TOKEN" "{{.BaseURL}}/api/v1/setup?group=default&amp;os=linux" | sh</code>
       <p style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0">
         <button id="copy" class="primary">Copy</button>
         <button id="verify">Wait for the host</button>
@@ -44,7 +44,7 @@ function updateCommand() {
   const group = document.getElementById('group').value.trim() || 'default';
   const url = `${baseURL}/api/v1/setup?group=${encodeURIComponent(group)}&os=linux`;
   const curl = baseURL.startsWith('https://') ? "curl --proto '=https' --tlsv1.2 -fsS" : 'curl -fsS';
-  commandEl.textContent = `${curl} -H "Authorization: Bearer $RPATCH_ADMIN_TOKEN" "${url}" | sudo sh`;
+  commandEl.textContent = `${curl} -H "Authorization: Bearer $RPATCH_ADMIN_TOKEN" "${url}" | sh`;
 }
 document.getElementById('group').addEventListener('input', updateCommand);
 updateCommand();

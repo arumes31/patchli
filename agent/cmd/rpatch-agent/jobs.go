@@ -69,33 +69,53 @@ func tail(s string, n int) string {
 }
 
 // queueResult persists r and wakes the writer.
-func queueResult(r ResultPayload) {
+// queueResult stores r until the controller confirmed it (see ackResult).
+// The file is written to a temporary name and renamed, so the spool never
+// holds a partial result.
+func queueResult(r ResultPayload) error {
 	r.Output = tail(r.Output, maxResultOutput)
 	if !validJobID.MatchString(r.JobID) {
-		log.Printf("Not reporting result with invalid job ID %q", r.JobID)
-		return
+		return fmt.Errorf("invalid job ID %q", r.JobID)
 	}
 	data, err := json.Marshal(r)
 	if err != nil {
-		return
+		return err
 	}
 	dir := resultsDirFunc()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		log.Printf("Cannot store result for job %q: %v", r.JobID, err)
-		return
+		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, r.JobID+".json"), data, 0o600); err != nil {
-		log.Printf("Cannot store result for job %q: %v", r.JobID, err)
-		return
+	tmp, err := os.CreateTemp(dir, ".result-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, r.JobID+".json")); err != nil {
+		return err
 	}
 	select {
 	case resultsReady <- struct{}{}:
 	default:
 	}
+	return nil
+}
+
+// ackResult removes a result the controller has stored.
+func ackResult(jobID string) {
+	if validJobID.MatchString(jobID) {
+		_ = os.Remove(filepath.Join(resultsDirFunc(), jobID+".json"))
+	}
 }
 
 // pendingResults returns stored results, oldest first.
-func pendingResults() map[string][]byte {
+func pendingResults() []json.RawMessage {
 	dir := resultsDirFunc()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -106,15 +126,20 @@ func pendingResults() map[string][]byte {
 		b, _ := entries[j].Info()
 		return a != nil && b != nil && a.ModTime().Before(b.ModTime())
 	})
-	out := make(map[string][]byte, len(entries))
+	var out []json.RawMessage
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), ".json") {
+		if !strings.HasSuffix(e.Name(), ".json") || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(dir, e.Name())) // #nosec G304 -- file names come from our own results directory.
-		if err == nil {
-			out[filepath.Join(dir, e.Name())] = data
+		if err != nil {
+			continue
 		}
+		if !json.Valid(data) {
+			_ = os.Remove(filepath.Join(dir, e.Name())) // cannot be delivered
+			continue
+		}
+		out = append(out, data)
 	}
 	return out
 }
@@ -122,19 +147,24 @@ func pendingResults() map[string][]byte {
 func resultsEmpty() bool { return len(pendingResults()) == 0 }
 
 // reportInterruptedJob turns a job that was running when the agent stopped
-// into a failed result.
+// into a failed result. The marker is kept until that result is stored.
 func reportInterruptedJob(last *state.State) {
 	if last == nil || last.Status != "running" {
 		return
 	}
 	log.Printf("RECOVERY: job %q was interrupted; reporting it as failed", last.JobID)
-	queueResult(ResultPayload{JobID: last.JobID, Action: last.Action, Error: "interrupted: the agent restarted during the job", Pending: -1})
+	if err := queueResult(ResultPayload{JobID: last.JobID, Action: last.Action, Error: "interrupted: the agent restarted during the job", Pending: -1}); err != nil {
+		log.Printf("Cannot store the recovery result for job %q: %v", last.JobID, err)
+		return
+	}
 	_ = clearStateFunc()
 }
 
 func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandPayload) {
 	if !jobMu.TryLock() {
-		queueResult(ResultPayload{JobID: cmd.ID, Action: cmd.Action, Error: "busy: another job is running", Pending: -1})
+		if err := queueResult(ResultPayload{JobID: cmd.ID, Action: cmd.Action, Error: "busy: another job is running", Pending: -1}); err != nil {
+			log.Printf("Cannot store result for job %q: %v", cmd.ID, err)
+		}
 		return
 	}
 	defer jobMu.Unlock()
@@ -164,7 +194,14 @@ func executeCommand(ctx context.Context, pm updater.PackageManager, cmd CommandP
 		r.Pending = 0
 	}
 	log.Printf("Job %q (%s) finished. Success: %v. Error: %q", cmd.ID, cmd.Action, r.Success, r.Error)
-	queueResult(r)
+	if err := queueResult(r); err != nil {
+		// Keep the running marker: the next start reports the job as interrupted.
+		log.Printf("Cannot store result for job %q: %v", cmd.ID, err)
+		return
+	}
+	if cmd.Action == "apply_updates" {
+		_ = clearStateFunc()
+	}
 
 	if cmd.Action == "reboot" && r.Success {
 		go rebootSoon()
@@ -218,10 +255,10 @@ func applyUpdates(ctx context.Context, pm updater.PackageManager, cmd CommandPay
 	if err := pm.PreFlightCheck(ctx); err != nil {
 		return updater.UpdateResult{}, fmt.Errorf("pre-flight check failed: %w", err)
 	}
+	// executeCommand clears the marker once the result is stored.
 	if err := saveStateFunc(state.State{JobID: cmd.ID, Action: cmd.Action, Status: "running"}); err != nil {
 		log.Printf("Failed to save state: %v", err)
 	}
-	defer func() { _ = clearStateFunc() }()
 
 	res, err := pm.ApplyUpdates(ctx, cmd.Packages)
 	if err == nil && !res.Success {

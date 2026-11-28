@@ -60,6 +60,7 @@ const (
 	MsgTypeCommand   = "command"
 	MsgTypeLog       = "log"
 	MsgTypeResult    = "result"
+	MsgTypeAck       = "ack"
 )
 
 type WSMessage struct {
@@ -347,6 +348,15 @@ func runSession(ctx context.Context, conn *websocket.Conn, nodeID string, pm upd
 				readErr <- err
 				return
 			}
+			if wsMsg.Type == MsgTypeAck {
+				var ack struct {
+					JobID string `json:"job_id"`
+				}
+				if json.Unmarshal(wsMsg.Payload, &ack) == nil {
+					ackResult(ack.JobID)
+				}
+				continue
+			}
 			if wsMsg.Type != MsgTypeCommand {
 				continue
 			}
@@ -374,12 +384,13 @@ func runSession(ctx context.Context, conn *websocket.Conn, nodeID string, pm upd
 		data, _ := json.Marshal(newHeartbeat(nodeID, pm))
 		return write(MsgTypeHeartbeat, data)
 	}
+	// Results stay queued until the controller acknowledges them; a result
+	// sent again after a reconnect is recorded only once.
 	flushResults := func() error {
-		for path, data := range pendingResults() {
+		for _, data := range pendingResults() {
 			if err := write(MsgTypeResult, data); err != nil {
 				return err
 			}
-			_ = os.Remove(path)
 		}
 		return nil
 	}
@@ -434,10 +445,6 @@ func newHeartbeat(nodeID string, pm updater.PackageManager) HeartbeatPayload {
 // enroll redeems the one-time registration grant from the installer
 // (RPATCH_GROUP, RPATCH_TIMESTAMP, RPATCH_NONCE, RPATCH_SIGNATURE) for a token pair.
 func enroll(ctx context.Context) error {
-	if t, err := loadTokensFunc(); err == nil && t != nil {
-		log.Println("Already enrolled; keeping the existing tokens.")
-		return nil
-	}
 	serverURL := os.Getenv("SERVER_URL")
 	if _, err := controllerEndpoint(serverURL, ""); err != nil {
 		return fmt.Errorf("invalid SERVER_URL: %w", err)
@@ -445,6 +452,19 @@ func enroll(ctx context.Context) error {
 	nodeID, err := getIdentityFunc()
 	if err != nil {
 		return fmt.Errorf("identity: %w", err)
+	}
+	// A reinstall keeps working credentials. Credentials the controller no
+	// longer accepts (expired or revoked) are replaced with the fresh grant.
+	if t, err := loadTokensFunc(); err == nil && t != nil {
+		fresh, rerr := refreshTokens(ctx, serverURL, nodeID, t.RefreshToken)
+		if rerr == nil {
+			if err := saveTokens(*fresh); err != nil {
+				return err
+			}
+			log.Println("Already enrolled; credentials refreshed.")
+			return nil
+		}
+		log.Printf("Stored credentials were rejected (%v); enrolling with the new grant.", rerr)
 	}
 	body, _ := json.Marshal(map[string]string{
 		"mac":       nodeID,
