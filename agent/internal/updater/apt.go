@@ -25,7 +25,9 @@ func (m *AptManager) CheckUpdates(ctx context.Context) (UpdateResult, error) {
 		return UpdateResult{Success: false, Output: out.String(), Error: err}, err
 	}
 
-	cmd = execCommandContext(ctx, "apt-get", "-s", "upgrade")
+	// Simulate the same upgrade ApplyUpdates runs, so the count includes
+	// packages that need new dependencies (new kernels).
+	cmd = execCommandContext(ctx, "apt-get", "-s", "upgrade", "--with-new-pkgs")
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
 	out.Reset()
